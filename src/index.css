@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  /* ─── Primary: Sage Green #869B7E ─────────────────────────── */
+  --color-violet-50:  #f4f6f3;
+  --color-violet-100: #e2e9df;
+  --color-violet-200: #c5d4bf;
+  --color-violet-300: #a3b89b;
+  --color-violet-400: #8daa84;
+  --color-violet-500: #869b7e;
+  --color-violet-600: #6b7d64;
+  --color-violet-700: #556350;
+  --color-violet-800: #42503d;
+  --color-violet-900: #2e3829;
+  --color-violet-950: #1a2118;
+
+  /* ─── Sage alias (태그·배지용) ─────────────────────────────── */
+  --color-sage-50:  #f4f6f3;
+  --color-sage-100: #e2e9df;
+  --color-sage-200: #c5d4bf;
+  --color-sage-300: #a3b89b;
+  --color-sage-400: #8daa84;
+  --color-sage-500: #869b7e;
+  --color-sage-600: #6b7d64;
+  --color-sage-700: #556350;
+  --color-sage-800: #42503d;
+  --color-sage-900: #2e3829;
+
+  /* ─── Linen: #C9CAAC (연한 올리브) ─────────────────────────── */
+  --color-linen-50:  #fafaf6;
+  --color-linen-100: #f6f3eb;
+  --color-linen-200: #edeadb;
+  --color-linen-300: #c9caac;
+  --color-linen-400: #b0b190;
+  --color-linen-500: #979874;
+  --color-linen-600: #7a7b5a;
+  --color-linen-700: #5f6046;
+  --color-linen-800: #484933;
+  --color-linen-900: #343523;
+
+  /* ─── Warm Red #7F2020 (위험·강조) ─────────────────────────── */
+  --color-crimson-50:  #fef4f4;
+  --color-crimson-100: #fde6e6;
+  --color-crimson-200: #f9bfbf;
+  --color-crimson-300: #f28888;
+  --color-crimson-400: #c85252;
+  --color-crimson-500: #a32828;
+  --color-crimson-600: #7f2020;
+  --color-crimson-700: #661a1a;
+  --color-crimson-800: #4e1414;
+  --color-crimson-900: #380f0f;
+}
