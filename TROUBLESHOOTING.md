@@ -1,4 +1,4 @@
-# 로컬 실행 트러블슈팅 기록 (AssetBox M1)
+# 로컬 실행 트러블슈팅 기록 (AssetBox)
 
 백엔드(`team`) + 프론트(`teabag-front`)를 로컬에서 처음 띄우며 겪은 문제와 해결 과정.
 같은 삽질 반복 방지용. (작성: 2026-06)
@@ -75,20 +75,83 @@
 
 ---
 
+## 6. S3 업로드 전부 실패 → AWS 계정 만료, 새 계정으로 재발급 (2026-06-15)
+
+- **증상**: 에셋 등록/모델 업로드 시 `STORAGE_WRITE_FAILED("s3 파일 전송에 실패")`. 썸네일조차 안 올라감.
+- **1차 진단**: `.env`의 S3 키로 직접 PutObject(boto3) → `InvalidAccessKeyId: The AWS Access Key Id you provided does not exist`. = 앱 무관, **키 자체가 무효**.
+- **실제 원인**: **AWS 계정이 만료**됨(키 회전 아님). → 새 AWS 계정 생성 + 결제 등록.
+- **새로 발급한 것**(콘솔에서):
+  1. **S3 버킷** `teabag-assetbox` (region `ap-northeast-2`, Block all public access ON, SSE-S3, 버전관리/Object Lock off)
+  2. **버킷 CORS** (3D 뷰어가 모델을 fetch하려면 필수 — 썸네일 `<img>`는 CORS 없이도 됨):
+     ```json
+     [{"AllowedHeaders":["*"],"AllowedMethods":["GET"],"AllowedOrigins":["http://localhost:3000","http://127.0.0.1:3000"],"ExposeHeaders":["ETag"]}]
+     ```
+  3. **IAM 정책**(이 버킷만 RW, 최소권한) — ARN은 **실제 버킷명**으로(`<...>` 꺾쇠 빼기, `assetbox-s3`로 오타냈다가 `NoSuchBucket`/`AccessDenied` 겪음):
+     ```json
+     {"Version":"2012-10-17","Statement":[
+       {"Effect":"Allow","Action":["s3:PutObject","s3:GetObject","s3:DeleteObject"],"Resource":"arn:aws:s3:::teabag-assetbox/*"},
+       {"Effect":"Allow","Action":["s3:ListBucket"],"Resource":"arn:aws:s3:::teabag-assetbox"}]}
+     ```
+  4. **IAM 유저** `assetbox-app`(콘솔 접근 X) → 위 정책 연결 → **액세스 키** 발급(use case는 아무거나, "Local code" 추천 — 키 자체는 동일).
+- **해결**: `team/.env.development`·`.env.production`의 `s3BucketName/s3AccessKey/s3SecretKey/s3Region` 교체 → 백엔드 재시작.
+- **함정/메모**:
+  - 앱은 `.env` 키 **한 세트**만 읽음 → 팀원 공유는 같은 키를 비공개로 (사람별 키 불필요, 학생 규모).
+  - IAM 정책 ARN ≠ 실제 버킷명이면 키는 유효해도 `AccessDenied`. 셋(버킷명·정책ARN·.env)이 **한 글자도 안 틀리게** 일치해야 함.
+  - 암호화 KMS 금지(SSE-S3) — KMS면 IAM에 KMS 권한도 필요해 업로드 깨짐.
+  - 백엔드 모델 확장자: `FileValidator`가 현재 **`fbx`만** 허용(`glb/obj` 주석). 테스트는 진짜 `.fbx`로(랜덤바이트 .fbx는 `FBXLoader: Cannot find version number`).
+  - 검증법: boto3로 PutObject/GetObject 직접 테스트해 키·버킷·정책 확인 후 앱 연결.
+
+---
+
+## 7. 에셋 등록 실패 원인 정정 (`POST /api/posts`) (2026-06-23 갱신)
+
+> 과거에는 인증/CORS 문제로 추정했지만, 현재 확인한 핵심 원인은 프론트와 백엔드의 multipart 계약 불일치였다.
+
+**증상**: 프론트에서 에셋 등록 시 `POST /api/posts`가 실패했다.
+
+**확정된 사실**:
+- 백엔드 `PostController`는 `POST /api/posts`에서 `request`, `thumbnail`, `assets` 파트를 모두 요구한다.
+- 기존 프론트는 `request`, `thumbnail`만 보내고 모델 파일은 이후 `/files/upload`로 별도 전송하려 했다.
+- 이 때문에 백엔드 로그에 `Required part 'assets' is not present`가 발생했다.
+- `assets` 파트를 포함하고, 유효한 `categoryId`를 넣은 요청은 `201 Created`로 성공했다.
+- S3 업로드, 에셋 상세 조회, 파일 presigned URL 조회, presigned GET 다운로드까지 확인했다.
+
+**해결**:
+- `postApi.create()`가 `assets` 파일 파트를 함께 보내도록 수정.
+- `CreateAssetPage`에서 모델 파일을 필수로 받고, 현재 백엔드 정책에 맞춰 `.fbx`만 선택 가능하게 수정.
+- 별도 `/files/upload` 호출은 제거.
+- Docker 프론트 nginx의 기본 업로드 제한(1MB)을 넘는 `.fbx`가 `413` HTML 응답을 만들 수 있어 `client_max_body_size 25m`를 설정.
+- 프론트 API 클라이언트가 비JSON 에러를 무조건 세션 만료로 오역하지 않도록 수정.
+
+---
+
 ## 핵심 교훈 요약
 
-1. **`curl은 되는데 브라우저는 안 될 때**" → 브라우저만 보내는 것(Origin/Cookie/Authorization 헤더)을 의심. curl에 헤더를 하나씩 추가해 이분탐색.
+0. **"재시작하면 깨짐 / 한 번은 되고 두 번째부터 안 됨"** → 백엔드가 자꾸 재시작되며 `create-drop`으로 DB가 비는지 의심. **PID/uptime + `users` 테이블**을 확인. (#7)
+1. **`curl은 되는데 브라우저는 안 될 때**" → 브라우저만 보내는 것(Origin/Cookie/Authorization 헤더)을 의심. curl에 헤더를 하나씩 추가해 이분탐색. **단, "내 테스트는 로그인 직후 바로 호출"이라 재시작-유저증발을 못 잡을 수 있음**에 주의.
 2. 에러 메시지가 난해하면(특히 Safari) → **발생 단계를 태깅**해 좁히되, `e.message` 재할당 금지(readonly).
 3. 앱 켜둔 채 `gradlew test` 금지(dev DB 날아감).
 4. 로컬 MySQL 비번은 `.env.production`에 맞추고, DB는 utf8mb4.
 5. 여러 vite 동시 실행 시 포트/호스트 명시 고정 + `http://127.0.0.1:PORT`로 접속.
 
-## 빠른 기동 절차
+## 빠른 기동 절차 (2026-06-16 갱신)
 ```bash
 # 1) Redis(docker)·MySQL(brew) 떠 있는지 확인
-# 2) 백엔드
-cd team && ./gradlew bootRun                    # :8080
-# 3) 프론트 (별도 터미널)
-cd teabag-front && npm run dev -- --port 5180 --strictPort --host 127.0.0.1
-# 4) 브라우저: http://127.0.0.1:5180  (앱 켜둔 채 gradlew test ❌)
+# 2) 백엔드 (IntelliJ Run 또는 bootRun) — :8080
+#    ※ ddl-auto: update (재시작해도 DB 유지). 운영은 validate.
+cd team && ./gradlew bootRun
+# 3) 프론트 — vite.config.js에 port 3000 고정(Origin 꼼수 제거됨)
+cd teabag-front && npm run dev                  # http://localhost:3000
+# 4) 브라우저: http://localhost:3000
+#    로그인: wjdtn747@naver.com / wjdtn3902  (영구 슈퍼어드민)
+#    ⚠️ 앱 켜둔 채 gradlew test ❌ / 백엔드 자주 재시작 시 토큰 무효될 수 있음 → 재로그인
 ```
+
+## 환경 빠른 참조
+- **프론트**: http://localhost:3000 (vite, `/api`→8080 프록시, Origin 꼼수 없음)
+- **백엔드**: :8080, `ddl-auto: update`
+- **로그인(영구)**: `wjdtn747@naver.com` / `wjdtn3902` (SUPER_ADMIN 시드)
+- **S3**: 버킷 `teabag-assetbox`(ap-northeast-2), IAM 유저 `assetbox-app`, 키는 `team/.env.*`
+- **S3 버킷 CORS**: `localhost:3000`/`127.0.0.1:3000` GET 허용 (3D 뷰어용)
+- **모델 확장자**: 현재 `.fbx`만(백엔드 FileValidator) / 테스트용: `~/Desktop/test-model.fbx`(three.js 삼바, 3.5MB)
+- **주의**: 토큰 만료/유저 없음 상태에서는 302 응답이 CORS처럼 보일 수 있음 (이슈 Asset-Box#109)
