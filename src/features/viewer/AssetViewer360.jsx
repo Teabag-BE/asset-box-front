@@ -219,14 +219,29 @@ function ViewerControls({ autoRotate, wireframe, capturing, onToggleRotate, onTo
   )
 }
 
-function ViewerFallback({ thumbnailUrl }) {
+function ViewerFallback({ thumbnailUrl, modelUrl, message = '미리보기를 불러올 수 없습니다' }) {
   return (
     <div style={{ width: '100%', height: '100%', background: '#f1f5f9', borderRadius: 12,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-      {thumbnailUrl
-        ? <img src={thumbnailUrl} alt="thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 12 }} />
-        : <><span style={{ fontSize: 48 }}>📦</span><p style={{ fontSize: 13, marginTop: 8 }}>미리보기를 불러올 수 없습니다</p></>
-      }
+      {thumbnailUrl ? (
+        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+          <img src={thumbnailUrl} alt="thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 12 }} />
+          <div style={{
+            position: 'absolute', left: 12, right: 12, bottom: 12,
+            background: 'rgba(15,23,42,0.78)', color: '#fff',
+            borderRadius: 10, padding: '10px 12px', fontSize: 12,
+          }}>
+            <div>{message}</div>
+            {modelUrl && <a href={modelUrl} target="_blank" rel="noreferrer" style={{ color: '#bfdbfe' }}>모델 파일 열기</a>}
+          </div>
+        </div>
+      ) : (
+        <>
+          <span style={{ fontSize: 48 }}>📦</span>
+          <p style={{ fontSize: 13, marginTop: 8 }}>{message}</p>
+          {modelUrl && <a href={modelUrl} target="_blank" rel="noreferrer" style={{ color: '#64748b', fontSize: 12 }}>모델 파일 열기</a>}
+        </>
+      )}
     </div>
   )
 }
@@ -266,7 +281,7 @@ export default function AssetViewer360({
   }
 
   if (!SUPPORTED.includes(ext) || !modelUrl) {
-    return <ViewerFallback thumbnailUrl={thumbnailUrl} />
+    return <ViewerFallback thumbnailUrl={thumbnailUrl} modelUrl={modelUrl} />
   }
 
   return (
@@ -281,7 +296,7 @@ export default function AssetViewer360({
         }}>● REC 6초 회전 캡처 중</div>
       )}
 
-      <ErrorBoundary fallback={<ViewerFallback thumbnailUrl={thumbnailUrl} />}>
+      <ErrorBoundary fallback={<ViewerFallback thumbnailUrl={thumbnailUrl} modelUrl={modelUrl} message="3D 미리보기 로딩에 실패했습니다" />}>
         <Canvas
           camera={{ position: [5, 3, 5], fov: 50 }}
           style={{ borderRadius: 12, width: '100%', height: '100%' }}
