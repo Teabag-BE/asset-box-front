@@ -22,7 +22,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       # PR: push=false 라 빌드만 수행(검증) / main push: 빌드 후 GHCR 푸시
       - name: 이미지 빌드 & (머지 시) Push
