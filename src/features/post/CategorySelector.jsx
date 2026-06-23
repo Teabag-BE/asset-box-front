@@ -21,7 +21,6 @@ export default function CategorySelector({ onSelect }) {
     if (id) {
       const children = await categoryApi.getChildren(id)
       setMids(children)
-      if (!children.length) onSelect(Number(id))
     }
   }
 
@@ -31,7 +30,6 @@ export default function CategorySelector({ onSelect }) {
     if (id) {
       const children = await categoryApi.getChildren(id)
       setLeaves(children)
-      if (!children.length) onSelect(Number(id))
     }
   }
 
@@ -42,7 +40,10 @@ export default function CategorySelector({ onSelect }) {
 
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-slate-700">카테고리 <span className="text-slate-400 font-normal">(선택)</span></label>
+      <label className="text-sm font-medium text-slate-700">
+        카테고리 <span className="text-crimson-600">*</span>
+        <span className="text-slate-400 font-normal"> 소분류까지 선택</span>
+      </label>
       <select value={rootId} onChange={e => handleRoot(e.target.value)} className={selectClass}>
         <option value="">대분류 선택</option>
         {roots.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}

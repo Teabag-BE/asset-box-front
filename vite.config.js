@@ -5,17 +5,20 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    // dev에서 /api 요청을 백엔드로 프록시.
-    // 백엔드 CORS가 http://localhost:3000 만 허용하므로, 프록시가 Origin을 그 값으로 교체해 보냄.
+    // 백엔드 CORS가 허용하는 origin(localhost:3000)으로 직접 띄운다.
+    // → Origin 을 강제 교체할 필요가 없어짐. (그 교체가 Safari multipart POST 본문을 깨뜨렸음)
+    host: 'localhost',
+    port: 3000,
+    strictPort: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.setHeader('Origin', 'http://localhost:3000')
-          })
-        },
+      },
+      '/s3-assets': {
+        target: 'https://teabag-assetbox.s3.ap-northeast-2.amazonaws.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/s3-assets/, ''),
       },
     },
   },
