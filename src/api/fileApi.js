@@ -3,7 +3,7 @@ import { request, requestMultipart } from './client'
 // presigned URL(쿼리스트링 포함)에서 확장자만 뽑기:  .../foo/bar.glb?X-Amz-...  → "glb"
 export function extFromUrl(url) {
   try {
-    const path = new URL(url).pathname
+    const path = new URL(url, location.origin).pathname
     const dot = path.lastIndexOf('.')
     return dot >= 0 ? path.slice(dot + 1).toLowerCase() : ''
   } catch {
@@ -12,6 +12,17 @@ export function extFromUrl(url) {
 }
 
 const VIEWABLE = ['glb', 'gltf', 'fbx', 'obj']
+const S3_ASSET_HOST = 'teabag-assetbox.s3.ap-northeast-2.amazonaws.com'
+
+function proxiedAssetUrl(url) {
+  try {
+    const parsed = new URL(url, location.origin)
+    if (parsed.hostname !== S3_ASSET_HOST) return url
+    return `/s3-assets${parsed.pathname}${parsed.search}`
+  } catch {
+    return url
+  }
+}
 
 export const fileApi = {
   // 모델/텍스처 등 에셋 파일 업로드 (post 생성 후 postId 로 연결)
@@ -40,7 +51,7 @@ export const fileApi = {
   pickModel: (urls = []) => {
     for (const url of urls) {
       const ext = extFromUrl(url)
-      if (VIEWABLE.includes(ext)) return { url, ext }
+      if (VIEWABLE.includes(ext)) return { url: proxiedAssetUrl(url), ext }
     }
     return null
   },

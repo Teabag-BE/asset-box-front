@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { postApi } from '../api/postApi'
-import { fileApi } from '../api/fileApi'
-import { useAuth } from '../auth/AuthContext'
 import Button from '../components/Button'
 import TagInput from '../features/post/TagInput'
 import CategorySelector from '../features/post/CategorySelector'
@@ -11,7 +9,6 @@ const inputCls = 'w-full rounded-lg border border-[#C9CAAC]/80 bg-white px-3 py-
 
 export default function CreateAssetPage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [categoryId, setCategoryId] = useState(null)
@@ -31,15 +28,19 @@ export default function CreateAssetPage() {
   async function onSubmit(e) {
     e.preventDefault()
     setError('')
+    if (!categoryId) { setError('카테고리는 소분류까지 선택해야 합니다.'); return }
     if (!thumbnail) { setError('썸네일 이미지는 필수입니다.'); return }
+    if (!model) { setError('3D 모델 파일은 필수입니다.'); return }
     setLoading(true)
     try {
-      // 1) 게시물 생성 (썸네일)
-      const created = await postApi.create({ title, content, categoryId, tags, thumbnail })
-      // 2) 3D 모델 파일이 있으면 postId 로 연결해 업로드
-      if (model && created?.id) {
-        await fileApi.uploadAssetFiles([model], { purposeId: created.id, uploaderId: user.id })
-      }
+      const created = await postApi.create({
+        title,
+        content,
+        categoryId,
+        tags,
+        thumbnail,
+        assets: [model],
+      })
       navigate(created?.id ? `/assets/${created.id}` : '/assets')
     } catch (err) {
       setError(err.message)
@@ -77,11 +78,11 @@ export default function CreateAssetPage() {
         </div>
 
         <div>
-          {/* 백엔드 FileValidator 가 현재 .fbx 만 허용(glb/obj는 주석 처리됨) → glb 열리면 그대로 동작 */}
           <label className="text-sm font-medium text-slate-700 block mb-1">
-            3D 모델 파일 <span className="text-slate-400 font-normal">(선택 · 현재 백엔드는 .fbx만 허용)</span>
+            3D 모델 파일 <span className="text-crimson-600">*</span>
+            <span className="text-slate-400 font-normal"> 현재 백엔드는 .fbx만 허용</span>
           </label>
-          <input type="file" accept=".glb,.gltf,.fbx,.obj"
+          <input type="file" accept=".fbx" required
             onChange={e => setModel(e.target.files?.[0] ?? null)}
             className="text-sm text-slate-500" />
           {model && <span className="block mt-1 text-xs text-slate-400">{model.name}</span>}
