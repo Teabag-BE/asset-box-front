@@ -30,7 +30,7 @@ export default function PortfolioPage() {
   return (
     <>
       <div className="max-w-5xl mx-auto px-4 pt-4">
-        <Link to="/directory" className="text-sm text-slate-400 hover:text-slate-600">← TA 디렉토리</Link>
+        <Link to="/directory" className="text-sm text-slate-400 hover:text-slate-600">← 크리에이터 디렉토리</Link>
       </div>
       <PortfolioView profile={profile} isMe={isMe} />
     </>
