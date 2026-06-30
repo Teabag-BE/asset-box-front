@@ -2,13 +2,19 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
-const MAJORS = ['BACK_END', 'TA', 'UNREAL', 'UNITY', 'AI']
+const MAJORS = [
+  { value: 'TA', label: '3D 아티스트' },
+  { value: 'UNITY', label: 'Unity 크리에이터' },
+  { value: 'UNREAL', label: 'Unreal 크리에이터' },
+  { value: 'BACK_END', label: '개발자' },
+  { value: 'AI', label: 'AI 크리에이터' },
+]
 
 export default function SignupPage() {
   const { signup } = useAuth()
   const navigate = useNavigate()
   const [form, setForm] = useState({
-    email: '', password: '', name: '', nickname: '', major: 'BACK_END',
+    email: '', password: '', name: '', nickname: '', major: 'TA',
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -54,9 +60,9 @@ export default function SignupPage() {
             <input name="nickname" value={form.nickname} onChange={onChange} required minLength={2} maxLength={30} className={inputCls} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-slate-600">전공/직군</span>
+            <span className="text-slate-600">활동 분야</span>
             <select name="major" value={form.major} onChange={onChange} className={inputCls}>
-              {MAJORS.map(m => <option key={m} value={m}>{m}</option>)}
+              {MAJORS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </label>
           <button type="submit" disabled={loading}
