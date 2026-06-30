@@ -37,7 +37,7 @@ export default function Layout() {
             <nav className="flex items-center gap-0.5">
               <Link to="/assets" className={navCls('/assets')}>에셋</Link>
               <Link to="/requests" className={navCls('/requests')}>요청 게시판</Link>
-              <Link to="/directory" className={navCls('/directory')}>TA 디렉토리</Link>
+              <Link to="/directory" className={navCls('/directory')}>크리에이터</Link>
             </nav>
           )}
 
