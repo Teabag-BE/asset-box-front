@@ -23,7 +23,7 @@ export default function HomePage() {
       <div className="text-center mb-10">
         <div className="w-14 h-14 rounded-2xl bg-[#869B7E] flex items-center justify-center text-white text-2xl font-black mx-auto mb-4">A</div>
         <h1 className="text-3xl font-bold text-slate-900">AssetBox</h1>
-        <p className="text-slate-500 mt-2">TA × Backend 협업 3D 에셋 포털</p>
+        <p className="text-slate-500 mt-2">3D 에셋을 탐색하고 공유하는 플랫폼</p>
         {!user && (
           <div className="flex gap-3 justify-center mt-6">
             <Link to="/login" className="bg-[#869B7E] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#6b7d64] transition-colors">로그인</Link>
@@ -39,7 +39,7 @@ export default function HomePage() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <FeatureCard to="/assets"    icon="🧊" title="에셋" desc="3D 에셋 업로드·조회" />
             <FeatureCard to="/requests"  icon="📋" title="요청 게시판" desc="에셋 제작 요청 등록·조회" />
-            <FeatureCard to="/directory" icon="👥" title="TA 디렉토리" desc="팀원 포트폴리오" />
+            <FeatureCard to="/directory" icon="👥" title="크리에이터" desc="제작자 포트폴리오" />
             <FeatureCard to="/inbox"     icon="💬" title="메시지" desc="유저 간 1:1 다이렉트 메시지" />
             <FeatureCard to="/profile"   icon="🙂" title="내 프로필" desc="내 포트폴리오·계정" />
             <FeatureCard icon="🛠" title="관리자" desc="회원·게시물·피드백 관리" disabled />

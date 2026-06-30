@@ -135,7 +135,7 @@ export default function RequestDetailPage() {
               <p className="text-sm font-medium text-slate-800">#{req.requesterId}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-400 mb-0.5">담당 TA</p>
+              <p className="text-xs text-slate-400 mb-0.5">담당 제작자</p>
               <p className="text-sm font-medium text-slate-800">{req.assigneeId ? `#${req.assigneeId}` : '미배정'}</p>
             </div>
             {!isMine && (

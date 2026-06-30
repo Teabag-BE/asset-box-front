@@ -57,7 +57,7 @@ export default function RequestBoardPage() {
       <div className="flex items-end justify-between mb-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">요청 게시판</h1>
-          <p className="text-sm text-slate-500 mt-1">TA에게 3D 에셋 제작을 요청하세요.</p>
+          <p className="text-sm text-slate-500 mt-1">필요한 3D 에셋 제작을 요청하세요.</p>
         </div>
         <Button onClick={() => navigate('/requests/new')}>+ 요청 작성</Button>
       </div>

@@ -37,8 +37,8 @@ export default function DirectoryPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-slate-900">TA 디렉토리</h1>
-      <p className="text-sm text-slate-500 mt-1 mb-5">팀원 포트폴리오를 한눈에 확인하세요.</p>
+      <h1 className="text-2xl font-bold text-slate-900">크리에이터 디렉토리</h1>
+      <p className="text-sm text-slate-500 mt-1 mb-5">제작자 포트폴리오를 한눈에 확인하세요.</p>
 
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="닉네임 또는 소개로 검색..."
         className="w-full max-w-md rounded-lg border border-[#C9CAAC]/80 bg-white px-3 py-2 text-sm outline-none focus:border-[#869B7E] mb-5" />

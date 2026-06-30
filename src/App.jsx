@@ -43,7 +43,7 @@ export default function App() {
             <Route path="/inbox"               element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
             <Route path="/messages/:partnerId" element={<ProtectedRoute><ConversationPage /></ProtectedRoute>} />
 
-            {/* TA 디렉토리 / 검색 */}
+            {/* 크리에이터 디렉토리 / 검색 */}
             <Route path="/directory" element={<ProtectedRoute><DirectoryPage /></ProtectedRoute>} />
             <Route path="/search"    element={<ProtectedRoute><SearchResultsPage /></ProtectedRoute>} />
 
