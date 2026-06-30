@@ -41,7 +41,7 @@ export default function SignupPage() {
     <div className="flex min-h-[calc(100vh-56px)] items-center justify-center p-4">
       <div className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 p-8">
         <h1 className="text-2xl font-bold mb-3 text-slate-900">회원가입</h1>
-        <p className="text-sm text-slate-500 mb-6">등록이 허용된 이메일만 가입할 수 있습니다.</p>
+        <p className="text-sm text-slate-500 mb-6">이메일로 간단히 계정을 만들 수 있습니다.</p>
         {error && <p className="text-crimson-600 text-sm mb-4">{error}</p>}
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <label className="flex flex-col gap-1 text-sm">
