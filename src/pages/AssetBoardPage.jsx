@@ -65,11 +65,11 @@ export default function AssetBoardPage() {
   }, [items, subtreeIds, tag, search])
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
+    <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex items-end justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">에셋</h1>
-          <p className="text-sm text-slate-500 mt-1">팀이 업로드한 3D 에셋을 둘러보세요.</p>
+          <p className="text-sm text-slate-500 mt-1">새롭게 업로드된 3D 에셋을 둘러보세요.</p>
         </div>
         <Button onClick={() => navigate('/assets/new')}>+ 에셋 등록</Button>
       </div>

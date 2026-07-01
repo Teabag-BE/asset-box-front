@@ -15,7 +15,7 @@ export default function CreateAssetPage() {
   const [tags, setTags] = useState([])
   const [thumbnail, setThumbnail] = useState(null)
   const [preview, setPreview] = useState('')
-  const [model, setModel] = useState(null)
+  const [assetPackage, setAssetPackage] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -30,7 +30,7 @@ export default function CreateAssetPage() {
     setError('')
     if (!categoryId) { setError('카테고리는 소분류까지 선택해야 합니다.'); return }
     if (!thumbnail) { setError('썸네일 이미지는 필수입니다.'); return }
-    if (!model) { setError('3D 모델 파일은 필수입니다.'); return }
+    if (!assetPackage) { setError('GLB, FBX 또는 텍스처가 포함된 ZIP 파일은 필수입니다.'); return }
     setLoading(true)
     try {
       const created = await postApi.create({
@@ -39,7 +39,7 @@ export default function CreateAssetPage() {
         categoryId,
         tags,
         thumbnail,
-        assets: [model],
+        assets: [assetPackage],
       })
       navigate(created?.id ? `/assets/${created.id}` : '/assets')
     } catch (err) {
@@ -79,13 +79,16 @@ export default function CreateAssetPage() {
 
         <div>
           <label className="text-sm font-medium text-slate-700 block mb-1">
-            3D 모델 파일 <span className="text-crimson-600">*</span>
-            <span className="text-slate-400 font-normal"> 현재 백엔드는 .fbx만 허용</span>
+            3D 에셋 패키지 <span className="text-crimson-600">*</span>
+            <span className="text-slate-400 font-normal"> .glb, .fbx 또는 .zip</span>
           </label>
-          <input type="file" accept=".fbx" required
-            onChange={e => setModel(e.target.files?.[0] ?? null)}
+          <input type="file" accept=".glb,.fbx,.zip,model/gltf-binary,application/zip,application/x-zip-compressed" required
+            onChange={e => setAssetPackage(e.target.files?.[0] ?? null)}
             className="text-sm text-slate-500" />
-          {model && <span className="block mt-1 text-xs text-slate-400">{model.name}</span>}
+          {assetPackage && <span className="block mt-1 text-xs text-slate-400">{assetPackage.name}</span>}
+          <p className="mt-1 text-xs text-slate-400">
+            GLB는 단일 웹 미리보기용, FBX는 단독 모델용, ZIP은 FBX와 textures 폴더를 함께 포함할 때 사용합니다.
+          </p>
         </div>
 
         <Button type="submit" disabled={loading} className="w-full">

@@ -14,7 +14,7 @@ export function extFromUrl(url) {
 const VIEWABLE = ['glb', 'gltf', 'fbx', 'obj']
 const S3_ASSET_HOST = 'teabag-assetbox.s3.ap-northeast-2.amazonaws.com'
 
-function proxiedAssetUrl(url) {
+export function proxiedAssetUrl(url) {
   try {
     const parsed = new URL(url, location.origin)
     if (parsed.hostname !== S3_ASSET_HOST) return url
@@ -54,5 +54,23 @@ export const fileApi = {
       if (VIEWABLE.includes(ext)) return { url: proxiedAssetUrl(url), ext }
     }
     return null
+  },
+
+  // post.files 메타데이터에서 웹 미리보기용 모델 파일 선택.
+  // zip 압축 해제 후 S3가 내부 경로를 보존하면 FBX 내부 텍스처 상대 참조를 그대로 따라갈 수 있다.
+  pickModelFromFiles: (files = []) => {
+    const normalized = files
+      .map(file => {
+        const ext = (file.extension || extFromUrl(file.accessUrl || '')).toLowerCase()
+        const url = file.accessUrl || file.url
+        return { ...file, ext, url: url ? proxiedAssetUrl(url) : '' }
+      })
+      .filter(file => file.url && VIEWABLE.includes(file.ext))
+
+    const preferred = normalized.find(file => file.ext === 'glb' || file.ext === 'gltf')
+      ?? normalized.find(file => file.ext === 'fbx')
+      ?? normalized[0]
+
+    return preferred ? { url: preferred.url, ext: preferred.ext, file: preferred } : null
   },
 }
