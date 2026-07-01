@@ -3,7 +3,8 @@
 // r3f 의 정상 관용구라 react-hooks lint 규칙을 이 파일에 한해 끈다.
 import { Suspense, useState, useRef, useEffect, Component } from 'react'
 import { Canvas, useLoader, useThree, useFrame } from '@react-three/fiber'
-import { OrbitControls, useGLTF, useFBX, useProgress, Html, Center } from '@react-three/drei'
+import { OrbitControls, useGLTF, useProgress, Html, Center } from '@react-three/drei'
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
@@ -38,17 +39,32 @@ function AutoFitCamera({ target }) {
   const { camera, controls } = useThree()
   useEffect(() => {
     if (!target) return
+
+    target.updateWorldMatrix?.(true, true)
     const box = new THREE.Box3().setFromObject(target)
-    const size = box.getSize(new THREE.Vector3())
+    if (box.isEmpty()) return
+
     const center = box.getCenter(new THREE.Vector3())
-    const maxDim = Math.max(size.x, size.y, size.z)
-    const dist = maxDim * 2.0
-    camera.position.set(center.x + dist, center.y + dist * 0.6, center.z + dist)
+    const sphere = box.getBoundingSphere(new THREE.Sphere())
+    const radius = Math.max(sphere.radius, 1)
+    const vFov = THREE.MathUtils.degToRad(camera.fov)
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect)
+    const fitFov = Math.min(vFov, hFov)
+    const dist = (radius / Math.sin(fitFov / 2)) * 1.12
+    const direction = new THREE.Vector3(1, 0.45, 1).normalize()
+
+    camera.position.copy(center).addScaledVector(direction, dist)
     camera.lookAt(center)
-    camera.near = dist / 100
-    camera.far = dist * 100
+    camera.near = Math.max(dist / 100, 0.01)
+    camera.far = Math.max(dist + radius * 8, 100)
     camera.updateProjectionMatrix()
-    if (controls) { controls.target.copy(center); controls.update() }
+    if (controls) {
+      controls.target.copy(center)
+      controls.minDistance = radius * 0.35
+      controls.maxDistance = dist * 4
+      controls.update()
+      controls.saveState?.()
+    }
   }, [target, camera, controls])
   return null
 }
@@ -156,6 +172,41 @@ function applyWireframe(obj, wireframe) {
   })
 }
 
+function shouldPreserveTransparency(material) {
+  const name = `${material?.name ?? ''}`.toLowerCase()
+  return Boolean(material?.alphaMap)
+    || name.includes('glass')
+    || name.includes('window')
+    || name.includes('transparent')
+    || name.includes('alpha')
+    || name.includes('유리')
+    || name.includes('창문')
+}
+
+function normalizeFbxMaterials(obj) {
+  obj.traverse(child => {
+    if (!child.isMesh) return
+    child.castShadow = true
+    child.receiveShadow = true
+
+    const mats = Array.isArray(child.material) ? child.material : [child.material]
+    mats.forEach(material => {
+      if (!material) return
+
+      if (!shouldPreserveTransparency(material)) {
+        material.transparent = false
+        material.opacity = 1
+        material.alphaTest = 0
+        material.depthWrite = true
+      }
+
+      material.depthTest = true
+      material.side = THREE.FrontSide
+      material.needsUpdate = true
+    })
+  })
+}
+
 function hasEmbeddedLights(scene) {
   let found = false
   scene.traverse(child => { if (child.isLight) found = true })
@@ -174,9 +225,31 @@ function GltfModel({ url, wireframe, onLoaded, onLightsDetected }) {
   return <primitive object={scene} />
 }
 
+function resolveRelativeAssetUrl(assetUrl, modelUrl) {
+  const s3Host = 'teabag-assetbox.s3.ap-northeast-2.amazonaws.com'
+  if (assetUrl.startsWith('/')) return assetUrl
+
+  try {
+    const parsed = new URL(assetUrl, window.location.origin)
+    if (parsed.hostname === s3Host) return `/s3-assets${parsed.pathname}${parsed.search}`
+    if (assetUrl.startsWith('http://') || assetUrl.startsWith('https://')) return assetUrl
+  } catch {
+    // relative paths from FBX should be resolved against the model URL below
+  }
+
+  try {
+    const resolved = new URL(assetUrl, new URL(modelUrl, window.location.href))
+    return `${resolved.pathname}${resolved.search}`
+  } catch {
+    return assetUrl
+  }
+}
+
 function FbxModel({ url, wireframe, onLoaded }) {
-  const fbx = useFBX(url)
-  useEffect(() => { if (fbx) { applyWireframe(fbx, wireframe); onLoaded?.(fbx) } }, [fbx])
+  const fbx = useLoader(FBXLoader, url, loader => {
+    loader.manager.setURLModifier(assetUrl => resolveRelativeAssetUrl(assetUrl, url))
+  })
+  useEffect(() => { if (fbx) { normalizeFbxMaterials(fbx); applyWireframe(fbx, wireframe); onLoaded?.(fbx) } }, [fbx])
   useEffect(() => { applyWireframe(fbx, wireframe) }, [wireframe])
   return <primitive object={fbx} />
 }
@@ -341,7 +414,6 @@ export default function AssetViewer360({
             minDistance={0.5}
             maxDistance={50}
           />
-          <gridHelper args={[20, 20, '#cbd5e1', '#e2e8f0']} />
         </Canvas>
       </ErrorBoundary>
 

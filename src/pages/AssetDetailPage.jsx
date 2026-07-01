@@ -11,6 +11,18 @@ import Avatar from '../components/Avatar'
 // three.js 묶음은 무거우니 모델이 있을 때만 lazy 로드
 const AssetViewer360 = lazy(() => import('../features/viewer/AssetViewer360'))
 
+function formatBytes(bytes) {
+  if (!bytes) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let size = bytes
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  return `${size.toFixed(unit === 0 ? 0 : 1)}${units[unit]}`
+}
+
 export default function AssetDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -22,13 +34,12 @@ export default function AssetDetailPage() {
 
   useEffect(() => {
     postApi.getDetail(id)
-      .then(setPost)
+      .then(data => {
+        setPost(data)
+        setModel(fileApi.pickModelFromFiles(data.files ?? []))
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-    // 연결된 에셋 파일에서 3D 모델 찾기 (실패해도 썸네일로 폴백)
-    fileApi.getAssetUrls(id)
-      .then(urls => setModel(fileApi.pickModel(urls)))
-      .catch(() => {})
   }, [id])
 
   async function handleDelete() {
@@ -47,6 +58,7 @@ export default function AssetDetailPage() {
 
   const isMine = user && String(user.id) === String(post.authorId)
   const author = post.authorNickname || `#${post.authorId}`
+  const assetFiles = post.files ?? []
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -157,11 +169,26 @@ export default function AssetDetailPage() {
             </Link>
           )}
 
-          {/* 📦 다운로드 파일 — 백엔드가 파일 메타(이름/확장자/id) 주면 주석 해제
-          <div className="bg-white border border-[#C9CAAC]/40 rounded-2xl p-5">
-            <h2 className="font-semibold text-slate-800 text-sm mb-3">📦 다운로드 ({assetFiles.length})</h2>
-            ...
-          </div> */}
+          {assetFiles.length > 0 && (
+            <div className="bg-white border border-[#C9CAAC]/40 rounded-2xl p-5">
+              <h2 className="font-semibold text-slate-800 text-sm mb-3">📦 다운로드 파일</h2>
+              <div className="space-y-2">
+                {assetFiles.map(file => (
+                  <a key={file.fileId ?? file.id}
+                    href={file.accessUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-between gap-3 rounded-lg border border-linen-200 px-3 py-2 text-sm hover:border-[#869B7E]/50 hover:bg-linen-50">
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-slate-700">{file.originalName}</span>
+                      <span className="text-xs uppercase text-slate-400">{file.fileType ?? file.extension}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-slate-400">{formatBytes(file.sizeBytes)}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </aside>
       </div>
     </div>
