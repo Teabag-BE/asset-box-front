@@ -174,8 +174,7 @@ function applyWireframe(obj, wireframe) {
 
 function shouldPreserveTransparency(material) {
   const name = `${material?.name ?? ''}`.toLowerCase()
-  return Boolean(material?.alphaMap)
-    || name.includes('glass')
+  return name.includes('glass')
     || name.includes('window')
     || name.includes('transparent')
     || name.includes('alpha')
@@ -197,6 +196,7 @@ function normalizeFbxMaterials(obj) {
         material.transparent = false
         material.opacity = 1
         material.alphaTest = 0
+        material.alphaMap = null
         material.depthWrite = true
       }
 
