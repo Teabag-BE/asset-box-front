@@ -201,7 +201,9 @@ function normalizeFbxMaterials(obj) {
       }
 
       material.depthTest = true
-      material.side = THREE.FrontSide
+      // FBX files exported from Blender/other DCC tools can have flipped winding.
+      // FrontSide culling makes those meshes disappear entirely in the preview.
+      material.side = THREE.DoubleSide
       material.needsUpdate = true
     })
   })
