@@ -207,6 +207,26 @@ function normalizeFbxMaterials(obj) {
   })
 }
 
+function normalizeModelObject(obj) {
+  if (!obj || obj.userData?.assetboxNormalized) return false
+
+  obj.updateWorldMatrix?.(true, true)
+  const box = new THREE.Box3().setFromObject(obj)
+  if (box.isEmpty()) return false
+
+  const center = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const maxDim = Math.max(size.x, size.y, size.z)
+  if (!Number.isFinite(maxDim) || maxDim <= 0) return false
+
+  const scale = 2.8 / maxDim
+  obj.scale.multiplyScalar(scale)
+  obj.position.addScaledVector(center, -scale)
+  obj.updateWorldMatrix?.(true, true)
+  obj.userData.assetboxNormalized = true
+  return true
+}
+
 function hasEmbeddedLights(scene) {
   let found = false
   scene.traverse(child => { if (child.isLight) found = true })
@@ -217,6 +237,7 @@ function GltfModel({ url, wireframe, onLoaded, onLightsDetected }) {
   const { scene } = useGLTF(url)
   useEffect(() => {
     if (!scene) return
+    normalizeModelObject(scene)
     applyWireframe(scene, wireframe)
     onLightsDetected?.(hasEmbeddedLights(scene))
     onLoaded?.(scene)
@@ -249,14 +270,25 @@ function FbxModel({ url, wireframe, onLoaded }) {
   const fbx = useLoader(FBXLoader, url, loader => {
     loader.manager.setURLModifier(assetUrl => resolveRelativeAssetUrl(assetUrl, url))
   })
-  useEffect(() => { if (fbx) { normalizeFbxMaterials(fbx); applyWireframe(fbx, wireframe); onLoaded?.(fbx) } }, [fbx])
+  useEffect(() => {
+    if (!fbx) return
+    normalizeFbxMaterials(fbx)
+    normalizeModelObject(fbx)
+    applyWireframe(fbx, wireframe)
+    onLoaded?.(fbx)
+  }, [fbx])
   useEffect(() => { applyWireframe(fbx, wireframe) }, [wireframe])
   return <primitive object={fbx} />
 }
 
 function ObjModel({ url, wireframe, onLoaded }) {
   const obj = useLoader(OBJLoader, url)
-  useEffect(() => { if (obj) { applyWireframe(obj, wireframe); onLoaded?.(obj) } }, [obj])
+  useEffect(() => {
+    if (!obj) return
+    normalizeModelObject(obj)
+    applyWireframe(obj, wireframe)
+    onLoaded?.(obj)
+  }, [obj])
   useEffect(() => { applyWireframe(obj, wireframe) }, [wireframe])
   return <primitive object={obj} />
 }
