@@ -33,13 +33,23 @@ export default function AssetDetailPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    postApi.getDetail(id)
-      .then(data => {
+    let alive = true
+
+    async function loadPost() {
+      try {
+        const data = await postApi.getDetail(id)
+        if (!alive) return
         setPost(data)
-        setModel(fileApi.pickModelFromFiles(data.files ?? []))
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
+        setModel(await fileApi.resolveModelFromFiles(data.files ?? []))
+      } catch (e) {
+        if (alive) setError(e.message)
+      } finally {
+        if (alive) setLoading(false)
+      }
+    }
+
+    loadPost()
+    return () => { alive = false }
   }, [id])
 
   async function handleDelete() {
