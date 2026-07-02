@@ -14,6 +14,18 @@ export function extFromUrl(url) {
 const VIEWABLE = ['glb', 'gltf', 'fbx', 'obj']
 const S3_ASSET_HOST = 'teabag-assetbox.s3.ap-northeast-2.amazonaws.com'
 
+function normalizeExt(value) {
+  return String(value ?? '').trim().replace(/^\./, '').toLowerCase()
+}
+
+function fileIdOf(file) {
+  return file?.fileId ?? file?.id
+}
+
+function accessUrlOf(file) {
+  return file?.accessUrl || file?.url || file?.downloadUrl || file?.presignedUrl
+}
+
 export function proxiedAssetUrl(url) {
   try {
     const parsed = new URL(url, location.origin)
@@ -47,6 +59,9 @@ export const fileApi = {
   getAssetUrls: (postId) =>
     request(`/files/get/presigned-urls?filePurpose=ASSET&filePurposeId=${postId}`),
 
+  getDownloadUrl: (fileId) =>
+    request(`/files/download/presigned-url?fileId=${fileId}`),
+
   // URL 목록에서 3D 로 볼 수 있는 첫 모델 파일 골라 {url, ext} 반환
   pickModel: (urls = []) => {
     for (const url of urls) {
@@ -61,8 +76,9 @@ export const fileApi = {
   pickModelFromFiles: (files = []) => {
     const normalized = files
       .map(file => {
-        const ext = (file.extension || extFromUrl(file.accessUrl || '')).toLowerCase()
-        const url = file.accessUrl || file.url
+        const rawUrl = accessUrlOf(file)
+        const ext = normalizeExt(file.extension || extFromUrl(rawUrl || ''))
+        const url = rawUrl
         return { ...file, ext, url: url ? proxiedAssetUrl(url) : '' }
       })
       .filter(file => file.url && VIEWABLE.includes(file.ext))
@@ -72,5 +88,30 @@ export const fileApi = {
       ?? normalized[0]
 
     return preferred ? { url: preferred.url, ext: preferred.ext, file: preferred } : null
+  },
+
+  resolveModelFromFiles: async (files = []) => {
+    const candidates = files
+      .map(file => {
+        const rawUrl = accessUrlOf(file)
+        const ext = normalizeExt(file.extension || extFromUrl(rawUrl || ''))
+        return { ...file, ext, rawUrl, fileId: fileIdOf(file) }
+      })
+      .filter(file => VIEWABLE.includes(file.ext))
+
+    const selected = candidates.find(file => file.ext === 'glb' || file.ext === 'gltf')
+      ?? candidates.find(file => file.ext === 'fbx')
+      ?? candidates[0]
+
+    if (!selected) return null
+
+    const rawUrl = selected.rawUrl || (selected.fileId ? await fileApi.getDownloadUrl(selected.fileId) : '')
+    if (!rawUrl) return null
+
+    return {
+      url: proxiedAssetUrl(rawUrl),
+      ext: selected.ext,
+      file: { ...selected, accessUrl: rawUrl },
+    }
   },
 }
