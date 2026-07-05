@@ -40,7 +40,7 @@ export default function AssetDetailPage() {
         const data = await postApi.getDetail(id)
         if (!alive) return
         setPost(data)
-        setModel(await fileApi.resolveModelFromFiles(data.files ?? []))
+        setModel(fileApi.resolveModelFromViewer(data.viewer) ?? await fileApi.resolveModelFromFiles(data.files ?? []))
       } catch (e) {
         if (alive) setError(e.message)
       } finally {
@@ -85,6 +85,7 @@ export default function AssetDetailPage() {
                   <AssetViewer360
                     modelUrl={model.url}
                     fileExtension={model.ext}
+                    textureUrls={model.textures}
                     thumbnailUrl={post.thumbnailUrl}
                     className="w-full h-full"
                   />
