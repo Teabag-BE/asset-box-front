@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/immutability, react-hooks/exhaustive-deps */
 // react-three-fiber 뷰어: useFrame/useThree 안에서 camera·scene 을 직접 변경하는 건
 // r3f 의 정상 관용구라 react-hooks lint 규칙을 이 파일에 한해 끈다.
-import { Suspense, useState, useRef, useEffect, Component } from 'react'
+import { Suspense, useState, useRef, useEffect, useMemo, Component } from 'react'
 import { Canvas, useLoader, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF, useProgress, Html, Center } from '@react-three/drei'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
@@ -248,13 +248,45 @@ function GltfModel({ url, wireframe, onLoaded, onLightsDetected }) {
   return <primitive object={scene} />
 }
 
-function resolveRelativeAssetUrl(assetUrl, modelUrl) {
+function basenameOf(value = '') {
+  const normalized = String(value).split('?')[0].replace(/\\/g, '/')
+  return normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase()
+}
+
+function buildTextureUrlMap(textures = []) {
+  const map = new Map()
+  textures.forEach(texture => {
+    const url = texture?.url || texture?.accessUrl
+    if (!url) return
+    const resolvedUrl = resolveS3AssetUrl(url)
+    const originalName = texture.originalName || basenameOf(url)
+    map.set(basenameOf(originalName), resolvedUrl)
+    map.set(basenameOf(url), resolvedUrl)
+  })
+  return map
+}
+
+function resolveS3AssetUrl(url) {
   const s3Host = 'teabag-assetbox.s3.ap-northeast-2.amazonaws.com'
+  try {
+    const parsed = new URL(url, window.location.origin)
+    if (parsed.hostname === s3Host) return `/s3-assets${parsed.pathname}${parsed.search}`
+  } catch {
+    // keep original value below
+  }
+  return url
+}
+
+function resolveRelativeAssetUrl(assetUrl, modelUrl, textureUrlMap) {
+  const textureUrl = textureUrlMap.get(basenameOf(assetUrl))
+  if (textureUrl) return textureUrl
+
   if (assetUrl.startsWith('/')) return assetUrl
 
   try {
-    const parsed = new URL(assetUrl, window.location.origin)
-    if (parsed.hostname === s3Host) return `/s3-assets${parsed.pathname}${parsed.search}`
+    new URL(assetUrl, window.location.origin)
+    const proxied = resolveS3AssetUrl(assetUrl)
+    if (proxied !== assetUrl) return proxied
     if (assetUrl.startsWith('http://') || assetUrl.startsWith('https://')) return assetUrl
   } catch {
     // relative paths from FBX should be resolved against the model URL below
@@ -268,9 +300,10 @@ function resolveRelativeAssetUrl(assetUrl, modelUrl) {
   }
 }
 
-function FbxModel({ url, wireframe, onLoaded }) {
+function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
+  const textureUrlMap = useMemo(() => buildTextureUrlMap(textureUrls), [textureUrls])
   const fbx = useLoader(FBXLoader, url, loader => {
-    loader.manager.setURLModifier(assetUrl => resolveRelativeAssetUrl(assetUrl, url))
+    loader.manager.setURLModifier(assetUrl => resolveRelativeAssetUrl(assetUrl, url, textureUrlMap))
   })
   useEffect(() => {
     if (!fbx) return
@@ -295,10 +328,10 @@ function ObjModel({ url, wireframe, onLoaded }) {
   return <primitive object={obj} />
 }
 
-function ModelLoader({ url, extension, wireframe, onLoaded, onLightsDetected }) {
+function ModelLoader({ url, extension, textureUrls, wireframe, onLoaded, onLightsDetected }) {
   if (extension === 'glb' || extension === 'gltf')
     return <GltfModel url={url} wireframe={wireframe} onLoaded={onLoaded} onLightsDetected={onLightsDetected} />
-  if (extension === 'fbx') return <FbxModel url={url} wireframe={wireframe} onLoaded={onLoaded} />
+  if (extension === 'fbx') return <FbxModel url={url} textureUrls={textureUrls} wireframe={wireframe} onLoaded={onLoaded} />
   if (extension === 'obj') return <ObjModel url={url} wireframe={wireframe} onLoaded={onLoaded} />
   return null
 }
@@ -356,7 +389,7 @@ function ViewerFallback({ thumbnailUrl, modelUrl, message = '미리보기를 불
 const SUPPORTED = ['glb', 'gltf', 'fbx', 'obj']
 
 export default function AssetViewer360({
-  modelUrl, fileExtension, thumbnailUrl, hdrUrl, hdrExtension,
+  modelUrl, fileExtension, textureUrls = [], thumbnailUrl, hdrUrl, hdrExtension,
   autoRotate: initRotate = true, className = ''
 }) {
   const [autoRotate, setAutoRotate] = useState(initRotate)
@@ -425,6 +458,7 @@ export default function AssetViewer360({
               <ModelLoader
                 url={modelUrl}
                 extension={ext}
+                textureUrls={textureUrls}
                 wireframe={wireframe}
                 onLoaded={handleLoaded}
                 onLightsDetected={setEmbeddedLights}
