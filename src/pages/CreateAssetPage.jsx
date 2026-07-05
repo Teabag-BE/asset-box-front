@@ -4,6 +4,7 @@ import { postApi } from '../api/postApi'
 import Button from '../components/Button'
 import TagInput from '../features/post/TagInput'
 import CategorySelector from '../features/post/CategorySelector'
+import { toAssetZipFile } from '../utils/assetZip'
 
 const inputCls = 'w-full rounded-lg border border-[#C9CAAC]/80 bg-white px-3 py-2 text-sm outline-none focus:border-[#869B7E] transition-colors'
 
@@ -30,16 +31,17 @@ export default function CreateAssetPage() {
     setError('')
     if (!categoryId) { setError('카테고리는 소분류까지 선택해야 합니다.'); return }
     if (!thumbnail) { setError('썸네일 이미지는 필수입니다.'); return }
-    if (!assetPackage) { setError('GLB, FBX 또는 텍스처가 포함된 ZIP 파일은 필수입니다.'); return }
+    if (!assetPackage) { setError('GLB, FBX 또는 ZIP 파일은 필수입니다.'); return }
     setLoading(true)
     try {
+      const assetZip = await toAssetZipFile(assetPackage)
       const created = await postApi.create({
         title,
         content,
         categoryId,
         tags,
         thumbnail,
-        assets: [assetPackage],
+        assetZip,
       })
       navigate(created?.id ? `/assets/${created.id}` : '/assets')
     } catch (err) {
@@ -87,7 +89,8 @@ export default function CreateAssetPage() {
             className="text-sm text-slate-500" />
           {assetPackage && <span className="block mt-1 text-xs text-slate-400">{assetPackage.name}</span>}
           <p className="mt-1 text-xs text-slate-400">
-            GLB는 단일 웹 미리보기용, FBX는 단독 모델용, ZIP은 FBX와 textures 폴더를 함께 포함할 때 사용합니다.
+            GLB, FBX 또는 ZIP 파일을 업로드하세요.
+            텍스처가 분리된 FBX는 textures 폴더와 함께 ZIP으로 압축해 업로드해야 합니다.
           </p>
         </div>
 

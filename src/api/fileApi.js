@@ -26,6 +26,11 @@ function accessUrlOf(file) {
   return file?.accessUrl || file?.url || file?.downloadUrl || file?.presignedUrl
 }
 
+function basenameOf(value = '') {
+  const normalized = String(value).split('?')[0].replace(/\\/g, '/')
+  return normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase()
+}
+
 export function proxiedAssetUrl(url) {
   try {
     const parsed = new URL(url, location.origin)
@@ -112,6 +117,33 @@ export const fileApi = {
       url: proxiedAssetUrl(rawUrl),
       ext: selected.ext,
       file: { ...selected, accessUrl: rawUrl },
+    }
+  },
+
+  resolveModelFromViewer: (viewer) => {
+    const model = viewer?.model
+    const rawUrl = accessUrlOf(model)
+    const ext = normalizeExt(model?.extension || extFromUrl(rawUrl || '') || model?.originalName?.split('.').pop())
+    if (!rawUrl || !VIEWABLE.includes(ext)) return null
+
+    const textures = (viewer?.textures ?? [])
+      .map(texture => {
+        const url = accessUrlOf(texture)
+        if (!url) return null
+        const originalName = texture.originalName || basenameOf(url)
+        return {
+          ...texture,
+          originalName,
+          url: proxiedAssetUrl(url),
+        }
+      })
+      .filter(Boolean)
+
+    return {
+      url: proxiedAssetUrl(rawUrl),
+      ext,
+      file: { ...model, accessUrl: rawUrl },
+      textures,
     }
   },
 }
