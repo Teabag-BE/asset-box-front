@@ -187,7 +187,10 @@ export async function validateAssetPackage(file) {
     }
 
     // FBX 텍스처 참조 검사(업로드에 살아남는 png/jpg/jpeg + exr 기준).
-    return await validateFbx(fbxEntries[0].data, [...keptTextures, ...convTextures], notes)
+    // allTextureNames: zip에 실제로 들어있는 이미지 파일 전체(미지원 포맷 포함).
+    // 참조 이름이 안 맞아도 텍스처를 "넣긴 넣은" 경우엔 차단하지 않기 위한 신호.
+    const allTextureNames = [...keptTextures, ...convTextures, ...unsupTextures]
+    return await validateFbx(fbxEntries[0].data, [...keptTextures, ...convTextures], notes, allTextureNames)
   } catch (e) {
     // 검사 자체 실패 시 업로드를 막지 않는다(오차단 방지).
     console.warn('[validateAssetPackage] 사전검사 실패, 통과 처리:', e)
@@ -195,8 +198,10 @@ export async function validateAssetPackage(file) {
   }
 }
 
-// FBX 하나에 대한 텍스처 참조 검사. presentTextures 는 업로드에 살아남는 텍스처 basename 목록.
-async function validateFbx(fbxBytes, presentTextures, notes = []) {
+// FBX 하나에 대한 텍스처 참조 검사.
+// presentTextures : 업로드에 살아남는 텍스처 basename(참조 매칭용).
+// allTextureNames : zip에 실제로 들어있던 이미지 파일 전체(미지원 포맷 포함) — 차단/경고 판단용.
+async function validateFbx(fbxBytes, presentTextures, notes = [], allTextureNames = []) {
   const withNotes = (result) => {
     if (result.ok && notes.length) {
       return { ok: true, warning: [result.warning, ...notes].filter(Boolean).join('\n') }
@@ -212,8 +217,20 @@ async function validateFbx(fbxBytes, presentTextures, notes = []) {
   const present = buildPresentSets(presentTextures)
   const missing = [...refs].filter(ref => refIsMissing(ref, present))
 
-  // 참조 텍스처가 전부 빠짐 — 그대로 올리면 색이 아예 안 붙는다.
+  // 참조 텍스처가 전부 빠짐.
   if (missing.length === refs.size) {
+    // 텍스처 파일을 "넣긴 넣었는데" FBX가 가리키는 이름과 다른 경우(예: Sketchfab export).
+    // 차단하지 않고 경고만 — 지오메트리는 정상이고 다운로드도 되며, 오차단이 더 답답하다.
+    if (allTextureNames.length > 0) {
+      return withNotes({
+        ok: true,
+        warning: `FBX가 참조하는 텍스처 이름(${formatList([...missing], 4)})이 함께 올린 파일과 달라서,\n`
+          + '뷰어에서 텍스처가 안 보일 수 있어요(모델 자체는 등록·다운로드됩니다).\n'
+          + `포함된 텍스처: ${formatList(allTextureNames, 4)}\n`
+          + '텍스처까지 보이게 하려면 FBX에 내장(Embed Media)해 export 하거나 GLB로 올리는 걸 권장해요.',
+      })
+    }
+    // 텍스처 파일 자체가 하나도 없음 — 정말로 빠뜨린 경우. 안내하며 차단.
     return {
       ok: false,
       message: `FBX가 참조하는 텍스처가 업로드 파일에 없습니다: ${formatList([...missing], 4)}\n`
