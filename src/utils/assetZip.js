@@ -1,4 +1,20 @@
+import { unzipSync, zipSync } from 'fflate'
+
 const MODEL_EXTENSIONS = new Set(['fbx', 'glb'])
+
+// 일부 툴이 만든 ZIP 은 STORED 엔트리에 데이터 디스크립터(EXT)를 붙여,
+// 백엔드의 Java ZipInputStream 이 거부한다("only DEFLATED entries can have EXT descriptor").
+// 브라우저에서 표준 ZIP 으로 재압축해 호환성을 보장하고, __MACOSX·디렉토리 엔트리도 정리한다.
+function normalizeZip(file, bytes) {
+  const entries = unzipSync(bytes)
+  const clean = {}
+  for (const [path, data] of Object.entries(entries)) {
+    if (path.startsWith('__MACOSX/') || path.endsWith('/')) continue
+    clean[path] = data
+  }
+  const rezipped = zipSync(clean)
+  return new File([rezipped], file.name, { type: 'application/zip', lastModified: Date.now() })
+}
 
 function extensionOf(filename = '') {
   const dot = filename.lastIndexOf('.')
@@ -37,7 +53,9 @@ function header(size) {
 
 export async function toAssetZipFile(file) {
   const ext = extensionOf(file?.name)
-  if (ext === 'zip') return file
+  if (ext === 'zip') {
+    return normalizeZip(file, new Uint8Array(await file.arrayBuffer()))
+  }
   if (!MODEL_EXTENSIONS.has(ext)) {
     throw new Error('GLB, FBX 또는 ZIP 파일만 업로드할 수 있습니다.')
   }
