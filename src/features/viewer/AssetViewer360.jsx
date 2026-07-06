@@ -367,6 +367,20 @@ function basenameOf(value = '') {
   return normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase()
 }
 
+function textureNameAliases(name = '') {
+  const basename = basenameOf(name)
+  if (!basename) return []
+
+  const aliases = new Set([basename])
+  if (basename.endsWith('.jpg')) {
+    aliases.add(`${basename.slice(0, -4)}.jpeg`)
+  } else if (basename.endsWith('.jpeg')) {
+    aliases.add(`${basename.slice(0, -5)}.jpg`)
+  }
+
+  return [...aliases]
+}
+
 function buildTextureUrlMap(textures = []) {
   const map = new Map()
   textures.forEach(texture => {
@@ -374,8 +388,8 @@ function buildTextureUrlMap(textures = []) {
     if (!url) return
     const resolvedUrl = resolveS3AssetUrl(url)
     const originalName = texture.originalName || basenameOf(url)
-    map.set(basenameOf(originalName), resolvedUrl)
-    map.set(basenameOf(url), resolvedUrl)
+    textureNameAliases(originalName).forEach(alias => map.set(alias, resolvedUrl))
+    textureNameAliases(url).forEach(alias => map.set(alias, resolvedUrl))
   })
   return map
 }
