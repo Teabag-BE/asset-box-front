@@ -243,7 +243,10 @@ function loadViewerTexture(texture) {
         loadedTexture.flipY = false
         loadedTexture.wrapS = THREE.RepeatWrapping
         loadedTexture.wrapT = THREE.RepeatWrapping
-        if (role === 'map') loadedTexture.colorSpace = THREE.SRGBColorSpace
+        if (role === 'map') {
+          loadedTexture.colorSpace = THREE.SRGBColorSpace
+          loadedTexture.needsUpdate = true
+        }
         resolve({ role, texture: loadedTexture })
       },
       undefined,
@@ -282,6 +285,7 @@ function toStandardMaterial(material) {
 function applyViewerTextures(obj, textureEntries) {
   const maps = textureEntries.filter(Boolean)
   if (!obj || maps.length === 0) return
+  const colorMapEntry = maps.find(entry => entry.role === 'map')
 
   obj.traverse(child => {
     if (!child.isMesh) return
@@ -296,14 +300,27 @@ function applyViewerTextures(obj, textureEntries) {
       if (!material) return
 
       maps.forEach(({ role, texture }) => {
+        if (role === 'map') return
         if (role in material) material[role] = texture
       })
 
+      if (colorMapEntry && 'map' in material) {
+        material.map = colorMapEntry.texture
+        material.color?.set?.(0xffffff)
+        if ('vertexColors' in material) material.vertexColors = false
+        if ('emissive' in material) material.emissive.set(0x000000)
+        if ('emissiveMap' in material) material.emissiveMap = null
+      }
       if (material.map) {
         material.color?.set?.(0xffffff)
       }
+      if (material.aoMap) {
+        material.aoMapIntensity = 0.35
+      }
       if (material.roughnessMap) {
         material.roughness = 1
+      } else if (material.roughness != null) {
+        material.roughness = Math.min(Math.max(material.roughness, 0.45), 0.75)
       }
       if (material.metalnessMap) {
         material.metalness = 1
@@ -367,6 +384,20 @@ function basenameOf(value = '') {
   return normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase()
 }
 
+function textureNameAliases(name = '') {
+  const basename = basenameOf(name)
+  if (!basename) return []
+
+  const aliases = new Set([basename])
+  if (basename.endsWith('.jpg')) {
+    aliases.add(`${basename.slice(0, -4)}.jpeg`)
+  } else if (basename.endsWith('.jpeg')) {
+    aliases.add(`${basename.slice(0, -5)}.jpg`)
+  }
+
+  return [...aliases]
+}
+
 function buildTextureUrlMap(textures = []) {
   const map = new Map()
   textures.forEach(texture => {
@@ -374,8 +405,8 @@ function buildTextureUrlMap(textures = []) {
     if (!url) return
     const resolvedUrl = resolveS3AssetUrl(url)
     const originalName = texture.originalName || basenameOf(url)
-    map.set(basenameOf(originalName), resolvedUrl)
-    map.set(basenameOf(url), resolvedUrl)
+    textureNameAliases(originalName).forEach(alias => map.set(alias, resolvedUrl))
+    textureNameAliases(url).forEach(alias => map.set(alias, resolvedUrl))
   })
   return map
 }
