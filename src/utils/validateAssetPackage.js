@@ -1,13 +1,32 @@
 // 업로드 전 클라이언트 사전검사.
-// FBX가 참조하는 텍스처가 함께 올린 파일에 실제로 있는지 브라우저에서 미리 확인해,
-// 콜라캔처럼 "이름 불일치로 텍스처가 안 붙는" 깨진 업로드를 등록 전에 막는다.
+// (1) ZIP 안에 뭐가 들어있는지 분류해, 못 올리는 이유를 "무엇이 왜 안 되는지 + 우리가 지원하는 형식"으로
+//     친절하게 설명한다(백엔드의 불친절한 "허용되지 않은 확장자" 대신).
+// (2) FBX가 참조하는 텍스처가 함께 올린 파일에 실제로 있는지 확인해,
+//     콜라캔처럼 "이름 불일치로 텍스처가 안 붙는" 깨진 업로드를 등록 전에 막는다.
 // (뷰어는 FBX가 이름으로 가리키는 텍스처만 인식하므로, 참조가 zip에 없으면 텍스처가 안 붙는다.)
 import { unzipSync } from 'fflate'
+import {
+  MODEL_EXTS,
+  KEPT_TEXTURE_EXTS,
+  CONVERTIBLE_TEXTURE_EXTS,
+  UNSUPPORTED_TEXTURE_EXTS,
+  DROPPABLE_DOC_EXTS,
+  MODEL_AUX_EXTS,
+  SUPPORTED_FORMATS_HELP,
+  extOf,
+  isJunkEntry,
+} from './assetFormats'
+
+// 파일 목록을 짧게 요약. ['a','b','c','d','e'] → "a, b, c 외 2개"
+function formatList(names, head = 3) {
+  const shown = names.slice(0, head).join(', ')
+  const rest = names.length - head
+  return rest > 0 ? `${shown} 외 ${rest}개` : shown
+}
 
 // FBX는 텍스처 경로를 제어문자로 구분해 저장하므로 제어문자 범위를 의도적으로 사용한다.
 // eslint-disable-next-line no-control-regex
 const IMAGE_REFERENCE = /[^\x00-\x1f"]*\.(?:png|jpe?g|tga|tif|tiff|bmp|dds)/gi
-const IMAGE_EXT = /\.(?:png|jpe?g|tga|tif|tiff|bmp|dds)$/i
 
 function basename(pathOrUrl) {
   return `${pathOrUrl ?? ''}`.split(/[?#]/)[0].replace(/\\/g, '/').split('/').pop().toLowerCase()
@@ -78,6 +97,39 @@ function refIsMissing(ref, present) {
     && !present.byKey.has(textureMatchKey(ref))
 }
 
+// ZIP 엔트리를 형식별로 분류한다.
+function classifyZip(entries) {
+  const models = []       // .fbx / .glb / .gltf
+  const keptTextures = [] // .png / .jpg / .jpeg (그대로 올라감)
+  const convTextures = [] // .exr (업로드 시 PNG로 자동 변환)
+  const unsupTextures = [] // .tga / .dds … (자동 제외 → 참조 시 안 보일 수 있음)
+  const docs = []         // .txt / .html … (자동 제외해도 무방)
+  const others = []       // 그 외 (자동 제외)
+  const fbxEntries = []   // [{ bn, data }]
+
+  for (const [path, data] of Object.entries(entries)) {
+    if (isJunkEntry(path)) continue
+    const bn = basename(path)
+    if (!bn) continue
+    const e = extOf(path)
+    if (MODEL_EXTS.has(e)) {
+      models.push(bn)
+      if (e === 'fbx') fbxEntries.push({ bn, data })
+    } else if (KEPT_TEXTURE_EXTS.has(e)) {
+      keptTextures.push(bn)
+    } else if (CONVERTIBLE_TEXTURE_EXTS.has(e)) {
+      convTextures.push(bn)
+    } else if (UNSUPPORTED_TEXTURE_EXTS.has(e)) {
+      unsupTextures.push(bn)
+    } else if (DROPPABLE_DOC_EXTS.has(e)) {
+      docs.push(bn)
+    } else if (!MODEL_AUX_EXTS.has(e)) {
+      others.push(bn)
+    }
+  }
+  return { models, keptTextures, convTextures, unsupTextures, docs, others, fbxEntries }
+}
+
 /**
  * @returns {Promise<{ok: true, warning?: string} | {ok: false, message: string}>}
  *  ok=false 면 등록을 막아야 함. ok=true 인데 warning 이 있으면 통과시키되 안내.
@@ -88,54 +140,95 @@ export async function validateAssetPackage(file) {
     const name = (file?.name ?? '').toLowerCase()
     const buffer = new Uint8Array(await file.arrayBuffer())
 
-    let fbxBytes = null
-    let textureBasenames = []
+    // 단일 파일 업로드 — 그대로 통과.
+    if (name.endsWith('.glb') || name.endsWith('.gltf')) return { ok: true } // 자체 포함 포맷
+    if (name.endsWith('.fbx')) return await validateFbx(buffer, [])
+    if (!name.endsWith('.zip')) return { ok: true } // 알 수 없는 형식 — 막지 않음
 
-    if (name.endsWith('.glb') || name.endsWith('.gltf')) {
-      return { ok: true } // 자체 포함 포맷
-    } else if (name.endsWith('.fbx')) {
-      fbxBytes = buffer // 단일 FBX(동봉 텍스처 없음)
-    } else if (name.endsWith('.zip')) {
-      const entries = unzipSync(buffer)
-      for (const path of Object.keys(entries)) {
-        const bn = basename(path)
-        if (path.startsWith('__MACOSX/') || bn === '.ds_store' || !bn) continue
-        const lower = path.toLowerCase()
-        if (lower.endsWith('.glb') || lower.endsWith('.gltf')) return { ok: true }
-        if (lower.endsWith('.fbx')) fbxBytes = entries[path]
-        else if (IMAGE_EXT.test(bn)) textureBasenames.push(bn)
-      }
-    } else {
-      return { ok: true } // 알 수 없는 형식 — 막지 않음
-    }
+    // ZIP — 내용물을 분류해 안내한다.
+    const { models, keptTextures, convTextures, unsupTextures, docs, others, fbxEntries } =
+      classifyZip(unzipSync(buffer))
 
-    if (!fbxBytes) return { ok: true }
-    if (hasEmbeddedImage(fbxBytes)) return { ok: true } // 내장 텍스처 = 자체 완결
-
-    const refs = extractReferencedBasenames(fbxBytes)
-    if (refs.size === 0) return { ok: true } // 참조하는 외부 텍스처 없음
-
-    const present = buildPresentSets(textureBasenames)
-    const missing = [...refs].filter(ref => refIsMissing(ref, present))
-
-    if (missing.length === refs.size) {
-      const list = missing.slice(0, 4).join(', ') + (missing.length > 4 ? ' 외' : '')
+    // 모델이 없다.
+    if (models.length === 0) {
       return {
         ok: false,
-        message: `FBX가 참조하는 텍스처가 업로드 파일에 없습니다: ${list}\n`
-          + 'FBX가 참조하는 이름 그대로 텍스처를 ZIP에 포함하거나, 텍스처를 FBX에 내장(Embed Media)해 export 하거나, GLB로 올려주세요.',
+        message: 'ZIP 안에 3D 모델 파일(.fbx / .glb)이 없습니다.\n'
+          + (docs.length || others.length
+            ? `들어있는 파일: ${formatList([...docs, ...others, ...unsupTextures])}\n`
+            : '')
+          + SUPPORTED_FORMATS_HELP,
       }
     }
 
-    if (missing.length > 0) {
-      const list = missing.slice(0, 4).join(', ') + (missing.length > 4 ? ' 외' : '')
-      return { ok: true, warning: `일부 텍스처가 빠졌습니다(${list}). 그대로 등록하면 일부가 안 보일 수 있어요.` }
+    // 모델이 여러 개 — 한 게시글엔 하나만.
+    if (models.length > 1) {
+      return {
+        ok: false,
+        message: `이 ZIP에는 3D 모델이 ${models.length}개 들어 있어요 (${formatList(models)}).\n`
+          + '한 게시글에는 모델 하나만 올릴 수 있어요. 올리려는 모델 하나와 그 텍스처만 골라 다시 압축해 주세요.\n'
+          + '(에셋 팩이라면 모델별로 나눠서 각각 등록해야 합니다.)\n'
+          + SUPPORTED_FORMATS_HELP,
+      }
     }
 
-    return { ok: true }
+    // 모델이 정확히 하나.
+    // GLB/GLTF 단일 모델이면 텍스처 자체 포함 — 통과.
+    if (fbxEntries.length === 0) return { ok: true }
+
+    // 자동 제외되는 파일이 있으면 경고에 함께 담는다.
+    const notes = []
+    if (unsupTextures.length) {
+      notes.push(`지원하지 않는 텍스처 포맷은 자동으로 빠집니다: ${formatList(unsupTextures)} `
+        + '(PNG/JPG로 변환하거나 FBX에 내장해 주세요)')
+    }
+    if (docs.length || others.length) {
+      notes.push(`문서·부가 파일은 자동으로 빠집니다: ${formatList([...docs, ...others])}`)
+    }
+
+    // FBX 텍스처 참조 검사(업로드에 살아남는 png/jpg/jpeg + exr 기준).
+    return await validateFbx(fbxEntries[0].data, [...keptTextures, ...convTextures], notes)
   } catch (e) {
     // 검사 자체 실패 시 업로드를 막지 않는다(오차단 방지).
     console.warn('[validateAssetPackage] 사전검사 실패, 통과 처리:', e)
     return { ok: true }
   }
+}
+
+// FBX 하나에 대한 텍스처 참조 검사. presentTextures 는 업로드에 살아남는 텍스처 basename 목록.
+async function validateFbx(fbxBytes, presentTextures, notes = []) {
+  const withNotes = (result) => {
+    if (result.ok && notes.length) {
+      return { ok: true, warning: [result.warning, ...notes].filter(Boolean).join('\n') }
+    }
+    return result
+  }
+
+  if (hasEmbeddedImage(fbxBytes)) return withNotes({ ok: true }) // 내장 텍스처 = 자체 완결
+
+  const refs = extractReferencedBasenames(fbxBytes)
+  if (refs.size === 0) return withNotes({ ok: true }) // 참조하는 외부 텍스처 없음
+
+  const present = buildPresentSets(presentTextures)
+  const missing = [...refs].filter(ref => refIsMissing(ref, present))
+
+  // 참조 텍스처가 전부 빠짐 — 그대로 올리면 색이 아예 안 붙는다.
+  if (missing.length === refs.size) {
+    return {
+      ok: false,
+      message: `FBX가 참조하는 텍스처가 업로드 파일에 없습니다: ${formatList([...missing], 4)}\n`
+        + (notes.length ? `${notes.join('\n')}\n` : '')
+        + 'FBX가 참조하는 이름 그대로 텍스처를 ZIP에 포함하거나, 텍스처를 FBX에 내장(Embed Media)해 export 하거나, GLB로 올려주세요.',
+    }
+  }
+
+  // 일부만 빠짐 — 통과시키되 경고.
+  if (missing.length > 0) {
+    return withNotes({
+      ok: true,
+      warning: `일부 텍스처가 빠졌습니다(${formatList([...missing], 4)}). 그대로 등록하면 일부가 안 보일 수 있어요.`,
+    })
+  }
+
+  return withNotes({ ok: true })
 }

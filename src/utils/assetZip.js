@@ -1,5 +1,6 @@
 import { unzipSync, zipSync } from 'fflate'
 import { exrToPngBytes } from './exrToPng'
+import { CONVERTIBLE_TEXTURE_EXTS, extOf, isJunkEntry, isKeptForUpload } from './assetFormats'
 
 const MODEL_EXTENSIONS = new Set(['fbx', 'glb'])
 
@@ -7,23 +8,28 @@ const MODEL_EXTENSIONS = new Set(['fbx', 'glb'])
 // 백엔드의 Java ZipInputStream 이 거부한다("only DEFLATED entries can have EXT descriptor").
 // 브라우저에서 표준 ZIP 으로 재압축해 호환성을 보장하고, __MACOSX·디렉토리 엔트리도 정리한다.
 // 또한 백엔드가 안 받고 뷰어도 못 읽는 .exr 텍스처는 .png 로 변환한다.
+// 문서(.txt/.html …)·미지원 텍스처(.tga/.dds …)처럼 백엔드가 거부하는 파일은
+// 여기서 조용히 빼고 올린다. (사전검사 validateAssetPackage 가 사용자에게 미리 안내함)
 async function normalizeZip(file, bytes) {
   const entries = unzipSync(bytes)
   const clean = {}
   for (const [path, data] of Object.entries(entries)) {
-    if (path.startsWith('__MACOSX/') || path.endsWith('/')) continue
+    if (isJunkEntry(path)) continue
 
-    if (/\.exr$/i.test(path)) {
+    if (CONVERTIBLE_TEXTURE_EXTS.has(extOf(path))) {
       try {
         const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-        clean[path.replace(/\.exr$/i, '.png')] = await exrToPngBytes(buf)
+        clean[path.replace(/\.[^.]+$/i, '.png')] = await exrToPngBytes(buf)
         continue
       } catch (e) {
         // 변환 실패 시 원본 유지(백엔드가 거부할 수 있으나, 조용히 삼키지 않음)
         console.warn('[assetZip] EXR→PNG 변환 실패, 원본 유지:', path, e)
+        clean[path] = data
+        continue
       }
     }
 
+    if (!isKeptForUpload(path)) continue // 문서·미지원 포맷은 업로드에서 제외
     clean[path] = data
   }
   const rezipped = zipSync(clean)
