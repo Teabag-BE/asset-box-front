@@ -36,3 +36,21 @@ jobs:
           tags: |
             ghcr.io/teabag-be/asset-box-front:latest
             ghcr.io/teabag-be/asset-box-front:${{ github.sha }}
+
+  # main 푸시 시 EC2(self-hosted runner)에서 프론트 컨테이너만 새 이미지로 교체
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: self-hosted
+    needs: image
+    steps:
+      - name: 레지스트리 로그인
+        run: echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+
+      - name: 프론트 컨테이너 배포
+        run: |
+          cd /home/ubuntu
+          sudo docker compose --env-file .env.production pull frontend
+          sudo docker compose --env-file .env.production up -d --no-build frontend
+          sudo docker image prune -f
