@@ -209,6 +209,120 @@ function normalizeFbxMaterials(obj) {
   })
 }
 
+function textureExtension(name = '') {
+  const cleanName = basenameOf(name)
+  const dotIndex = cleanName.lastIndexOf('.')
+  return dotIndex >= 0 ? cleanName.slice(dotIndex + 1) : ''
+}
+
+function classifyTextureRole(name = '') {
+  const cleanName = basenameOf(name)
+  if (/(^|[_\-.])(diff|diffuse|basecolor|base_color|albedo|color|col)([_\-.]|$)/.test(cleanName)) return 'map'
+  if (/(^|[_\-.])(normal|nor|nrm|nor_gl|normal_gl|normaldx|normal_dx)([_\-.]|$)/.test(cleanName)) return 'normalMap'
+  if (/(^|[_\-.])(rough|roughness)([_\-.]|$)/.test(cleanName)) return 'roughnessMap'
+  if (/(^|[_\-.])(metal|metallic|metalness)([_\-.]|$)/.test(cleanName)) return 'metalnessMap'
+  if (/(^|[_\-.])(ao|occlusion|ambient_occlusion)([_\-.]|$)/.test(cleanName)) return 'aoMap'
+  if (/(^|[_\-.])(alpha|opacity|transparent)([_\-.]|$)/.test(cleanName)) return 'alphaMap'
+  return null
+}
+
+function loadViewerTexture(texture) {
+  const url = texture.url || texture.accessUrl
+  const name = texture.originalName || basenameOf(url)
+  const ext = textureExtension(name || url)
+  const role = classifyTextureRole(name || url)
+  if (!url || !role) return Promise.resolve(null)
+
+  const loader = ext === 'exr' ? new EXRLoader() : new THREE.TextureLoader()
+
+  return new Promise(resolve => {
+    loader.load(
+      url,
+      loadedTexture => {
+        loadedTexture.name = name
+        loadedTexture.flipY = false
+        loadedTexture.wrapS = THREE.RepeatWrapping
+        loadedTexture.wrapT = THREE.RepeatWrapping
+        if (role === 'map') loadedTexture.colorSpace = THREE.SRGBColorSpace
+        resolve({ role, texture: loadedTexture })
+      },
+      undefined,
+      err => {
+        console.warn('[AssetViewer360] 텍스처 로딩 실패:', name, err)
+        resolve(null)
+      }
+    )
+  })
+}
+
+function shouldUseStandardMaterial(material, textureEntries) {
+  if (!material || material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) return false
+  return textureEntries.some(entry => ['roughnessMap', 'metalnessMap', 'normalMap', 'aoMap'].includes(entry?.role))
+}
+
+function toStandardMaterial(material) {
+  const standard = new THREE.MeshStandardMaterial({
+    name: material.name,
+    color: material.color?.clone?.() ?? new THREE.Color(0xffffff),
+    map: material.map ?? null,
+    alphaMap: material.alphaMap ?? null,
+    transparent: material.transparent,
+    opacity: material.opacity ?? 1,
+    side: material.side,
+    wireframe: material.wireframe,
+  })
+
+  if (material.normalMap) standard.normalMap = material.normalMap
+  if (material.bumpMap) standard.bumpMap = material.bumpMap
+  if (material.emissiveMap) standard.emissiveMap = material.emissiveMap
+  if (material.emissive) standard.emissive.copy(material.emissive)
+  return standard
+}
+
+function applyViewerTextures(obj, textureEntries) {
+  const maps = textureEntries.filter(Boolean)
+  if (!obj || maps.length === 0) return
+
+  obj.traverse(child => {
+    if (!child.isMesh) return
+
+    const sourceMaterials = Array.isArray(child.material) ? child.material : [child.material]
+    const materials = sourceMaterials.map(material => (
+      shouldUseStandardMaterial(material, maps) ? toStandardMaterial(material) : material
+    ))
+    child.material = Array.isArray(child.material) ? materials : materials[0]
+
+    materials.forEach(material => {
+      if (!material) return
+
+      maps.forEach(({ role, texture }) => {
+        if (role in material) material[role] = texture
+      })
+
+      if (material.map) {
+        material.color?.set?.(0xffffff)
+      }
+      if (material.roughnessMap) {
+        material.roughness = 1
+      }
+      if (material.metalnessMap) {
+        material.metalness = 1
+      } else if (material.metalness != null) {
+        material.metalness = Math.min(material.metalness, 0.35)
+      }
+      if (material.normalMap) {
+        material.normalScale = material.normalScale || new THREE.Vector2(1, 1)
+      }
+      if (material.alphaMap) {
+        material.transparent = true
+        material.alphaTest = 0.05
+      }
+
+      material.needsUpdate = true
+    })
+  })
+}
+
 function normalizeModelObject(obj) {
   if (!obj || obj.userData?.assetboxNormalized) return false
 
@@ -305,6 +419,7 @@ function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
   const fbx = useLoader(FBXLoader, url, loader => {
     loader.manager.setURLModifier(assetUrl => resolveRelativeAssetUrl(assetUrl, url, textureUrlMap))
   })
+
   useEffect(() => {
     if (!fbx) return
     normalizeFbxMaterials(fbx)
@@ -312,6 +427,31 @@ function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
     applyWireframe(fbx, wireframe)
     onLoaded?.(fbx)
   }, [fbx])
+
+  useEffect(() => {
+    if (!fbx || !textureUrls?.length) return
+
+    let cancelled = false
+    let loadedEntries = []
+
+    Promise.all(textureUrls.map(loadViewerTexture)).then(entries => {
+      loadedEntries = entries.filter(Boolean)
+      if (cancelled) {
+        loadedEntries.forEach(entry => entry.texture?.dispose?.())
+        return
+      }
+
+      applyViewerTextures(fbx, loadedEntries)
+      normalizeFbxMaterials(fbx)
+      applyWireframe(fbx, wireframe)
+    })
+
+    return () => {
+      cancelled = true
+      loadedEntries.forEach(entry => entry.texture?.dispose?.())
+    }
+  }, [fbx, textureUrls, wireframe])
+
   useEffect(() => { applyWireframe(fbx, wireframe) }, [wireframe])
   return <primitive object={fbx} />
 }
