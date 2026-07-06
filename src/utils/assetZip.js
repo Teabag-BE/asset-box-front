@@ -1,15 +1,29 @@
 import { unzipSync, zipSync } from 'fflate'
+import { exrToPngBytes } from './exrToPng'
 
 const MODEL_EXTENSIONS = new Set(['fbx', 'glb'])
 
 // 일부 툴이 만든 ZIP 은 STORED 엔트리에 데이터 디스크립터(EXT)를 붙여,
 // 백엔드의 Java ZipInputStream 이 거부한다("only DEFLATED entries can have EXT descriptor").
 // 브라우저에서 표준 ZIP 으로 재압축해 호환성을 보장하고, __MACOSX·디렉토리 엔트리도 정리한다.
-function normalizeZip(file, bytes) {
+// 또한 백엔드가 안 받고 뷰어도 못 읽는 .exr 텍스처는 .png 로 변환한다.
+async function normalizeZip(file, bytes) {
   const entries = unzipSync(bytes)
   const clean = {}
   for (const [path, data] of Object.entries(entries)) {
     if (path.startsWith('__MACOSX/') || path.endsWith('/')) continue
+
+    if (/\.exr$/i.test(path)) {
+      try {
+        const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+        clean[path.replace(/\.exr$/i, '.png')] = await exrToPngBytes(buf)
+        continue
+      } catch (e) {
+        // 변환 실패 시 원본 유지(백엔드가 거부할 수 있으나, 조용히 삼키지 않음)
+        console.warn('[assetZip] EXR→PNG 변환 실패, 원본 유지:', path, e)
+      }
+    }
+
     clean[path] = data
   }
   const rezipped = zipSync(clean)
