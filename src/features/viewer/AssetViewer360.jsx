@@ -282,9 +282,36 @@ function toStandardMaterial(material) {
   return standard
 }
 
+function hasDuplicateTextureRoles(textureEntries) {
+  const seen = new Set()
+  return textureEntries.some(entry => {
+    if (!entry?.role) return false
+    if (seen.has(entry.role)) return true
+    seen.add(entry.role)
+    return false
+  })
+}
+
+function shouldApplyGlobalTextureFallback(textureEntries) {
+  const maps = textureEntries.filter(Boolean)
+  return maps.length > 0 && !hasDuplicateTextureRoles(maps)
+}
+
+function ensureAoUv2(geometry) {
+  if (!geometry?.attributes?.uv) return false
+  if (!geometry.attributes.uv2) {
+    geometry.setAttribute('uv2', geometry.attributes.uv.clone())
+  }
+  return true
+}
+
+function disposeTextureEntries(textureEntries) {
+  textureEntries.forEach(entry => entry.texture?.dispose?.())
+}
+
 function applyViewerTextures(obj, textureEntries) {
   const maps = textureEntries.filter(Boolean)
-  if (!obj || maps.length === 0) return
+  if (!obj || !shouldApplyGlobalTextureFallback(maps)) return
   const colorMapEntry = maps.find(entry => entry.role === 'map')
 
   obj.traverse(child => {
@@ -301,6 +328,7 @@ function applyViewerTextures(obj, textureEntries) {
 
       maps.forEach(({ role, texture }) => {
         if (role === 'map') return
+        if (role === 'aoMap' && !ensureAoUv2(child.geometry)) return
         if (role in material) material[role] = texture
       })
 
@@ -315,7 +343,7 @@ function applyViewerTextures(obj, textureEntries) {
         material.color?.set?.(0xffffff)
       }
       if (material.aoMap) {
-        material.aoMapIntensity = 0.35
+        material.aoMapIntensity = 0.2
       }
       if (material.roughnessMap) {
         material.roughness = 1
@@ -384,16 +412,24 @@ function basenameOf(value = '') {
   return normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase()
 }
 
+function normalizedAssetPath(value = '') {
+  return String(value).split('?')[0].replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase()
+}
+
 function textureNameAliases(name = '') {
-  const basename = basenameOf(name)
+  const normalized = normalizedAssetPath(name)
+  const basename = basenameOf(normalized)
   if (!basename) return []
 
   const aliases = new Set([basename])
-  if (basename.endsWith('.jpg')) {
-    aliases.add(`${basename.slice(0, -4)}.jpeg`)
-  } else if (basename.endsWith('.jpeg')) {
-    aliases.add(`${basename.slice(0, -5)}.jpg`)
-  }
+  if (normalized && normalized !== basename) aliases.add(normalized)
+  ;[basename, normalized].forEach(alias => {
+    if (alias.endsWith('.jpg')) {
+      aliases.add(`${alias.slice(0, -4)}.jpeg`)
+    } else if (alias.endsWith('.jpeg')) {
+      aliases.add(`${alias.slice(0, -5)}.jpg`)
+    }
+  })
 
   return [...aliases]
 }
@@ -423,7 +459,7 @@ function resolveS3AssetUrl(url) {
 }
 
 function resolveRelativeAssetUrl(assetUrl, modelUrl, textureUrlMap) {
-  const textureUrl = textureUrlMap.get(basenameOf(assetUrl))
+  const textureUrl = textureUrlMap.get(normalizedAssetPath(assetUrl)) ?? textureUrlMap.get(basenameOf(assetUrl))
   if (textureUrl) return textureUrl
 
   if (assetUrl.startsWith('/')) return assetUrl
@@ -468,7 +504,13 @@ function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
     Promise.all(textureUrls.map(loadViewerTexture)).then(entries => {
       loadedEntries = entries.filter(Boolean)
       if (cancelled) {
-        loadedEntries.forEach(entry => entry.texture?.dispose?.())
+        disposeTextureEntries(loadedEntries)
+        return
+      }
+
+      if (!shouldApplyGlobalTextureFallback(loadedEntries)) {
+        disposeTextureEntries(loadedEntries)
+        loadedEntries = []
         return
       }
 
@@ -479,7 +521,7 @@ function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
 
     return () => {
       cancelled = true
-      loadedEntries.forEach(entry => entry.texture?.dispose?.())
+      disposeTextureEntries(loadedEntries)
     }
   }, [fbx, textureUrls, wireframe])
 

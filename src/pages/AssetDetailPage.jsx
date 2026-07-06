@@ -30,6 +30,7 @@ export default function AssetDetailPage() {
   const [post, setPost] = useState(null)
   const [model, setModel] = useState(null)   // { url, ext } | null
   const [loading, setLoading] = useState(true)
+  const [downloadingFileId, setDownloadingFileId] = useState(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -59,6 +60,22 @@ export default function AssetDetailPage() {
       navigate('/assets')
     } catch (e) {
       setError(e.message)
+    }
+  }
+
+  async function handleDownload(e, file) {
+    e.preventDefault()
+    const fileId = file.fileId ?? file.id
+    if (!fileId) return
+
+    setDownloadingFileId(fileId)
+    try {
+      const downloadUrl = await fileApi.getDownloadUrl(fileId)
+      window.location.href = downloadUrl
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDownloadingFileId(null)
     }
   }
 
@@ -187,14 +204,15 @@ export default function AssetDetailPage() {
                 {assetFiles.map(file => (
                   <a key={file.fileId ?? file.id}
                     href={file.accessUrl}
-                    target="_blank"
-                    rel="noreferrer"
+                    onClick={e => handleDownload(e, file)}
                     className="flex items-center justify-between gap-3 rounded-lg border border-linen-200 px-3 py-2 text-sm hover:border-[#869B7E]/50 hover:bg-linen-50">
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-slate-700">{file.originalName}</span>
                       <span className="text-xs uppercase text-slate-400">{file.fileType ?? file.extension}</span>
                     </span>
-                    <span className="shrink-0 text-xs text-slate-400">{formatBytes(file.sizeBytes)}</span>
+                    <span className="shrink-0 text-xs text-slate-400">
+                      {downloadingFileId === (file.fileId ?? file.id) ? '준비 중' : formatBytes(file.sizeBytes)}
+                    </span>
                   </a>
                 ))}
               </div>

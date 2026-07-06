@@ -7,6 +7,7 @@ import CategorySelector from '../features/post/CategorySelector'
 import { toAssetZipFile } from '../utils/assetZip'
 
 const inputCls = 'w-full rounded-lg border border-[#C9CAAC]/80 bg-white px-3 py-2 text-sm outline-none focus:border-[#869B7E] transition-colors'
+const MAX_ASSET_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
 
 export default function CreateAssetPage() {
   const navigate = useNavigate()
@@ -32,6 +33,7 @@ export default function CreateAssetPage() {
     if (!categoryId) { setError('카테고리는 소분류까지 선택해야 합니다.'); return }
     if (!thumbnail) { setError('썸네일 이미지는 필수입니다.'); return }
     if (!assetPackage) { setError('GLB, FBX 또는 ZIP 파일은 필수입니다.'); return }
+    if (assetPackage.size > MAX_ASSET_UPLOAD_SIZE_BYTES) { setError('3D 에셋 패키지는 50MB 이하로 업로드해야 합니다.'); return }
     setLoading(true)
     try {
       const assetZip = await toAssetZipFile(assetPackage)

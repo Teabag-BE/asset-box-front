@@ -31,6 +31,8 @@ function basenameOf(value = '') {
   return normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase()
 }
 
+const MAX_ASSET_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
+
 export function proxiedAssetUrl(url) {
   try {
     const parsed = new URL(url, location.origin)
@@ -45,6 +47,11 @@ export const fileApi = {
   // 모델/텍스처 등 에셋 파일 업로드 (post 생성 후 postId 로 연결)
   //  files: File[],  uploaderId: 현재 유저 id
   uploadAssetFiles: (files, { purposeId, uploaderId, fileType = 'MODEL' }) => {
+    const totalSize = files.reduce((sum, file) => sum + (file?.size ?? 0), 0)
+    if (totalSize > MAX_ASSET_UPLOAD_SIZE_BYTES) {
+      throw new Error('파일 크기는 50MB를 초과할 수 없습니다.')
+    }
+
     const fd = new FormData()
     const batchId = crypto.randomUUID()
     const fileInfos = files.map((_, i) => ({
