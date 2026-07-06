@@ -7,6 +7,7 @@ import { OrbitControls, useGLTF, useProgress, Html, Center } from '@react-three/
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 import * as THREE from 'three'
 
@@ -126,6 +127,26 @@ function CaptureController({ capturing, modelCenter, onDone }) {
     camera.lookAt(cx, cy, cz)
     camera.updateMatrixWorld()
   })
+
+  return null
+}
+
+// HDR 미지정 시 기본 환경맵. metalness 가 있는 재질은 반사할 환경이 없으면
+// 조명이 있어도 검게 나오므로(콜라캔이 검던 원인), 내장 RoomEnvironment 를 깔아준다.
+function DefaultEnvironment() {
+  const { scene, gl } = useThree()
+
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl)
+    const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environment = envMap
+    pmrem.dispose()
+
+    return () => {
+      scene.environment = null
+      envMap.dispose()
+    }
+  }, [scene, gl])
 
   return null
 }
@@ -347,7 +368,10 @@ function applyViewerTextures(obj, textureEntries) {
 
       let assignedDiffuse = false
       unambiguous.forEach(({ role, texture }) => {
-        if (!(role in material) || material[role]) return
+        if (!(role in material)) return
+        // 로딩 실패한 텍스처는 image 없는 빈 껍데기로 슬롯만 차지한다(내부 참조가
+        // C:\ 같은 존재하지 않는 경로일 때). 실제 이미지가 로드된 맵만 점유로 인정.
+        if (material[role]?.image) return
         material[role] = texture
         if (role === 'map') assignedDiffuse = true
       })
@@ -659,7 +683,9 @@ export default function AssetViewer360({
           )}
 
           {/* 환경맵: HDR이 있으면 직접 로드, 없으면 기본 조명만 사용 */}
-          {hdrUrl && <HdrEnvironment url={hdrUrl} extension={hdrExtension} />}
+          {hdrUrl
+            ? <HdrEnvironment url={hdrUrl} extension={hdrExtension} />
+            : <DefaultEnvironment />}
 
           <Suspense fallback={<Loader />}>
             <Center>
