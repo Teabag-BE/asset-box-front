@@ -1,13 +1,14 @@
 /* eslint-disable react-hooks/immutability, react-hooks/exhaustive-deps */
 // react-three-fiber 뷰어: useFrame/useThree 안에서 camera·scene 을 직접 변경하는 건
 // r3f 의 정상 관용구라 react-hooks lint 규칙을 이 파일에 한해 끈다.
-import { Suspense, useState, useRef, useEffect, useMemo, Component } from 'react'
+import { Suspense, useState, useRef, useEffect, Component } from 'react'
 import { Canvas, useLoader, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF, useProgress, Html, Center } from '@react-three/drei'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import * as THREE from 'three'
 
 class ErrorBoundary extends Component {
@@ -130,6 +131,26 @@ function CaptureController({ capturing, modelCenter, onDone }) {
   return null
 }
 
+// HDR 미지정 시 기본 환경맵. metalness 가 있는 재질은 반사할 환경이 없으면
+// 조명이 있어도 검게 나오므로(사과·통조림이 어둡던 원인), 내장 RoomEnvironment 를 깔아준다.
+function DefaultEnvironment() {
+  const { scene, gl } = useThree()
+
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl)
+    const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    scene.environment = envMap
+    pmrem.dispose()
+
+    return () => {
+      scene.environment = null
+      envMap.dispose()
+    }
+  }, [scene, gl])
+
+  return null
+}
+
 function HdrEnvironment({ url, extension }) {
   const { scene, gl } = useThree()
 
@@ -212,18 +233,11 @@ function applyWireframe(obj, wireframe) {
   })
 }
 
-function shouldPreserveTransparency(material) {
-  const name = `${material?.name ?? ''}`.toLowerCase()
-  const namedTransparent = name.includes('glass')
-    || name.includes('window')
-    || name.includes('transparent')
-    || name.includes('유리')
-    || name.includes('창문')
-
-  return namedTransparent
-}
-
-function normalizeFbxMaterials(obj) {
+// FBX 자체 재질/텍스처 바인딩을 그대로 존중한다.
+// 이전에는 텍스처 역할을 파일명으로 추측해 재질을 재구성했으나(applyViewerTextures),
+// 그 2차 로직이 정상 업로드 모델의 올바른 native 바인딩을 오히려 망가뜨렸다
+// (주황 자동차가 검게 됨). 여기서는 winding 뒤집힘 대비 양면 렌더만 최소 보정한다.
+function relaxFbxCulling(obj) {
   obj.traverse(child => {
     if (!child.isMesh) return
     child.castShadow = true
@@ -232,145 +246,9 @@ function normalizeFbxMaterials(obj) {
     const mats = Array.isArray(child.material) ? child.material : [child.material]
     mats.forEach(material => {
       if (!material) return
-
-      if (!shouldPreserveTransparency(material)) {
-        material.transparent = false
-        material.opacity = 1
-        material.alphaTest = 0
-        material.alphaMap = null
-        material.depthWrite = true
-      }
-
-      material.depthTest = true
-      // FBX files exported from Blender/other DCC tools can have flipped winding.
-      // FrontSide culling makes those meshes disappear entirely in the preview.
+      // FBX(Blender/기타 DCC export)는 winding 이 뒤집힌 메시가 있어
+      // FrontSide culling 이면 통째로 사라진다. 양면 렌더로만 보정.
       material.side = THREE.DoubleSide
-      material.needsUpdate = true
-    })
-  })
-}
-
-function textureExtension(name = '') {
-  const cleanName = basenameOf(name)
-  const dotIndex = cleanName.lastIndexOf('.')
-  return dotIndex >= 0 ? cleanName.slice(dotIndex + 1) : ''
-}
-
-function classifyTextureRole(name = '') {
-  const cleanName = basenameOf(name)
-  if (/(^|[_\-.])(diff|diffuse|basecolor|base_color|albedo|color|col)([_\-.]|$)/.test(cleanName)) return 'map'
-  if (/(^|[_\-.])(normal|nor|nrm|nor_gl|normal_gl|normaldx|normal_dx)([_\-.]|$)/.test(cleanName)) return 'normalMap'
-  if (/(^|[_\-.])(rough|roughness)([_\-.]|$)/.test(cleanName)) return 'roughnessMap'
-  if (/(^|[_\-.])(metal|metallic|metalness)([_\-.]|$)/.test(cleanName)) return 'metalnessMap'
-  if (/(^|[_\-.])(ao|occlusion|ambient_occlusion)([_\-.]|$)/.test(cleanName)) return null
-  if (/(^|[_\-.])(alpha|opacity|transparent)([_\-.]|$)/.test(cleanName)) return 'alphaMap'
-  if (/\.(png|jpe?g|webp)$/i.test(cleanName)) return 'map'
-  return null
-}
-
-function loadViewerTexture(texture) {
-  const url = texture.url || texture.accessUrl
-  const name = texture.originalName || basenameOf(url)
-  const ext = textureExtension(name || url)
-  const role = classifyTextureRole(name || url)
-  if (!url || !role) return Promise.resolve(null)
-
-  const loader = ext === 'exr' ? new EXRLoader() : new THREE.TextureLoader()
-
-  return new Promise(resolve => {
-    loader.load(
-      url,
-      loadedTexture => {
-        loadedTexture.name = name
-        loadedTexture.flipY = false
-        loadedTexture.wrapS = THREE.RepeatWrapping
-        loadedTexture.wrapT = THREE.RepeatWrapping
-        if (role === 'map') loadedTexture.colorSpace = THREE.SRGBColorSpace
-        resolve({ role, texture: loadedTexture })
-      },
-      undefined,
-      err => {
-        console.warn('[AssetViewer360] 텍스처 로딩 실패:', name, err)
-        resolve(null)
-      }
-    )
-  })
-}
-
-function shouldUseStandardMaterial(material, textureEntries) {
-  if (!material || material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) return false
-  return textureEntries.some(entry => ['roughnessMap', 'metalnessMap', 'normalMap', 'aoMap'].includes(entry?.role))
-}
-
-function toStandardMaterial(material) {
-  const standard = new THREE.MeshStandardMaterial({
-    name: material.name,
-    color: material.color?.clone?.() ?? new THREE.Color(0xffffff),
-    map: material.map ?? null,
-    alphaMap: material.alphaMap ?? null,
-    transparent: material.transparent,
-    opacity: material.opacity ?? 1,
-    side: material.side,
-    wireframe: material.wireframe,
-  })
-
-  if (material.normalMap) standard.normalMap = material.normalMap
-  if (material.bumpMap) standard.bumpMap = material.bumpMap
-  if (material.emissiveMap) standard.emissiveMap = material.emissiveMap
-  if (material.emissive) standard.emissive.copy(material.emissive)
-  return standard
-}
-
-function applyViewerTextures(obj, textureEntries) {
-  const maps = textureEntries.filter(Boolean)
-  if (!obj || maps.length === 0) return
-
-  // 이 함수는 FBX 내부 참조가 깨진 모델의 "폴백"이다.
-  // 역할별 후보가 여러 개(멀티 재질 모델)면 어느 재질에 붙을지 알 수 없으므로 제외하고,
-  // 로더가 setURLModifier 매칭으로 이미 붙인 맵은 절대 덮어쓰지 않는다.
-  const roleCounts = new Map()
-  maps.forEach(({ role }) => roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1))
-  const unambiguous = maps.filter(({ role }) => roleCounts.get(role) === 1)
-  if (unambiguous.length === 0) return
-
-  obj.traverse(child => {
-    if (!child.isMesh) return
-
-    const sourceMaterials = Array.isArray(child.material) ? child.material : [child.material]
-    const materials = sourceMaterials.map(material => (
-      shouldUseStandardMaterial(material, unambiguous) ? toStandardMaterial(material) : material
-    ))
-    child.material = Array.isArray(child.material) ? materials : materials[0]
-
-    materials.forEach(material => {
-      if (!material) return
-
-      let assignedDiffuse = false
-      unambiguous.forEach(({ role, texture }) => {
-        if (!(role in material) || material[role]) return
-        material[role] = texture
-        if (role === 'map') assignedDiffuse = true
-      })
-
-      if (assignedDiffuse) {
-        material.color?.set?.(0xffffff)
-      }
-      if (material.roughnessMap) {
-        material.roughness = 1
-      }
-      if (material.metalnessMap) {
-        material.metalness = 1
-      } else if (material.metalness != null) {
-        material.metalness = Math.min(material.metalness, 0.35)
-      }
-      if (material.normalMap) {
-        material.normalScale = material.normalScale || new THREE.Vector2(1, 1)
-      }
-      if (material.alphaMap) {
-        material.transparent = true
-        material.alphaTest = 0.05
-      }
-
       material.needsUpdate = true
     })
   })
@@ -459,6 +337,11 @@ function resolveS3AssetUrl(url) {
 }
 
 function resolveRelativeAssetUrl(assetUrl, modelUrl, textureUrlMap) {
+  // FBX 내장(embedded) 텍스처는 FBXLoader 가 blob:/data: URL 로 로드한다.
+  // 이걸 절대 건드리면 안 된다 — 아래 상대경로 해석에 걸려 pathname 만 남으면
+  // 내장 텍스처가 통째로 깨진다(자동차 바디가 검게 나오던 진짜 원인).
+  if (assetUrl.startsWith('blob:') || assetUrl.startsWith('data:')) return assetUrl
+
   const textureUrl = textureUrlMap.get(basenameOf(assetUrl))
   if (textureUrl) return textureUrl
 
@@ -482,46 +365,41 @@ function resolveRelativeAssetUrl(assetUrl, modelUrl, textureUrlMap) {
 }
 
 function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
-  const textureUrlMap = useMemo(() => buildTextureUrlMap(textureUrls), [textureUrls])
-  const fbx = useLoader(FBXLoader, url, loader => {
-    loader.manager.setURLModifier(assetUrl => resolveRelativeAssetUrl(assetUrl, url, textureUrlMap))
-  })
+  const [fbx, setFbx] = useState(null)
 
   useEffect(() => {
-    if (!fbx) return
-    normalizeFbxMaterials(fbx)
-    normalizeModelObject(fbx)
-    applyWireframe(fbx, wireframe)
-    onLoaded?.(fbx)
-  }, [fbx])
-
-  useEffect(() => {
-    if (!fbx || !textureUrls?.length) return
-
     let cancelled = false
-    let loadedEntries = []
 
-    Promise.all(textureUrls.map(loadViewerTexture)).then(entries => {
-      loadedEntries = entries.filter(Boolean)
-      if (cancelled) {
-        loadedEntries.forEach(entry => entry.texture?.dispose?.())
-        return
-      }
+    // FBX 전용 LoadingManager 로 로드한다.
+    // useLoader/new FBXLoader 는 기본적으로 전역 DefaultLoadingManager 를 공유하는데,
+    // 앱 내 다른 로더(useGLTF·useProgress 등)와 얽히면 setURLModifier 가 유실돼
+    // FBX 가 텍스처를 아예 요청하지 못하는 경우가 있었다(자동차가 검게 나오던 원인).
+    // 로드마다 독립 매니저를 만들어 basename→presigned 매칭을 확실히 건다.
+    const textureUrlMap = buildTextureUrlMap(textureUrls)
+    const manager = new THREE.LoadingManager()
+    manager.setURLModifier(assetUrl => resolveRelativeAssetUrl(assetUrl, url, textureUrlMap))
 
-      applyWireframe(fbx, false)
-      applyViewerTextures(fbx, loadedEntries)
-      normalizeFbxMaterials(fbx)
-      applyWireframe(fbx, wireframe)
-    })
+    const loader = new FBXLoader(manager)
+    loader.load(
+      url,
+      obj => {
+        if (cancelled) return
+        // FBX 자체 재질/텍스처 바인딩을 그대로 존중한다(역할 추측·재질 재구성 없음).
+        relaxFbxCulling(obj)
+        normalizeModelObject(obj)
+        setFbx(obj)
+        onLoaded?.(obj)
+      },
+      undefined,
+      err => console.error('[FbxModel] FBX 로딩 실패:', err)
+    )
 
-    return () => {
-      cancelled = true
-      loadedEntries.forEach(entry => entry.texture?.dispose?.())
-    }
-  }, [fbx, textureUrls, wireframe])
+    return () => { cancelled = true }
+  }, [url])
 
-  useEffect(() => { applyWireframe(fbx, wireframe) }, [wireframe])
-  return <primitive object={fbx} />
+  useEffect(() => { if (fbx) applyWireframe(fbx, wireframe) }, [fbx, wireframe])
+
+  return fbx ? <primitive object={fbx} /> : null
 }
 
 function ObjModel({ url, wireframe, onLoaded }) {
@@ -659,7 +537,9 @@ export default function AssetViewer360({
           )}
 
           {/* 환경맵: HDR이 있으면 직접 로드, 없으면 기본 조명만 사용 */}
-          {hdrUrl && <HdrEnvironment url={hdrUrl} extension={hdrExtension} />}
+          {hdrUrl
+            ? <HdrEnvironment url={hdrUrl} extension={hdrExtension} />
+            : <DefaultEnvironment />}
 
           <Suspense fallback={<Loader />}>
             <Center>
