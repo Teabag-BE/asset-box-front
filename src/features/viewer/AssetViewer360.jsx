@@ -325,23 +325,34 @@ function applyViewerTextures(obj, textureEntries) {
   const maps = textureEntries.filter(Boolean)
   if (!obj || maps.length === 0) return
 
+  // 이 함수는 FBX 내부 참조가 깨진 모델의 "폴백"이다.
+  // 역할별 후보가 여러 개(멀티 재질 모델)면 어느 재질에 붙을지 알 수 없으므로 제외하고,
+  // 로더가 setURLModifier 매칭으로 이미 붙인 맵은 절대 덮어쓰지 않는다.
+  const roleCounts = new Map()
+  maps.forEach(({ role }) => roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1))
+  const unambiguous = maps.filter(({ role }) => roleCounts.get(role) === 1)
+  if (unambiguous.length === 0) return
+
   obj.traverse(child => {
     if (!child.isMesh) return
 
     const sourceMaterials = Array.isArray(child.material) ? child.material : [child.material]
     const materials = sourceMaterials.map(material => (
-      shouldUseStandardMaterial(material, maps) ? toStandardMaterial(material) : material
+      shouldUseStandardMaterial(material, unambiguous) ? toStandardMaterial(material) : material
     ))
     child.material = Array.isArray(child.material) ? materials : materials[0]
 
     materials.forEach(material => {
       if (!material) return
 
-      maps.forEach(({ role, texture }) => {
-        if (role in material) material[role] = texture
+      let assignedDiffuse = false
+      unambiguous.forEach(({ role, texture }) => {
+        if (!(role in material) || material[role]) return
+        material[role] = texture
+        if (role === 'map') assignedDiffuse = true
       })
 
-      if (material.map) {
+      if (assignedDiffuse) {
         material.color?.set?.(0xffffff)
       }
       if (material.roughnessMap) {
