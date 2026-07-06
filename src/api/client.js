@@ -45,7 +45,7 @@ function redirectToLogin() {
 }
 
 function nonJsonError(status) {
-  if (status === 413) return new Error('파일 크기가 너무 큽니다. 20MB 이하 파일로 다시 시도해주세요.')
+  if (status === 413) return new Error('파일 크기가 너무 큽니다. 50MB 이하 파일로 다시 시도해주세요.')
   return new Error(`서버 응답을 해석할 수 없습니다 (HTTP ${status})`)
 }
 
