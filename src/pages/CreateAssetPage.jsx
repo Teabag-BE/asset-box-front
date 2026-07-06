@@ -88,10 +88,19 @@ export default function CreateAssetPage() {
             onChange={e => setAssetPackage(e.target.files?.[0] ?? null)}
             className="text-sm text-slate-500" />
           {assetPackage && <span className="block mt-1 text-xs text-slate-400">{assetPackage.name}</span>}
-          <p className="mt-1 text-xs text-slate-400">
-            GLB, FBX 또는 ZIP 파일을 업로드하세요.
-            텍스처가 분리된 FBX는 textures 폴더와 함께 ZIP으로 압축해 업로드해야 합니다.
-          </p>
+          <div className="mt-2 rounded-lg border border-[#C9CAAC]/50 bg-linen-50/60 p-3 text-xs text-slate-500 leading-relaxed">
+            <p className="font-semibold text-slate-600 mb-1">텍스처가 잘 보이려면?</p>
+            <p className="mb-1">
+              <b className="text-slate-600">GLB 권장</b> — 재질·텍스처가 파일 하나에 포함돼 가장 안전합니다.
+            </p>
+            <p className="mb-1">
+              <b className="text-slate-600">FBX + 텍스처 ZIP</b>을 올릴 땐, <u>FBX가 참조하는 텍스처 이름 그대로</u> ZIP에 포함해야 합니다.
+              뷰어는 FBX가 이름으로 가리키는 텍스처만 인식하며, 이름이 다르면(예: 다른 PC 경로로 링크한 채 export) 텍스처가 붙지 않습니다.
+            </p>
+            <p className="text-slate-400">
+              ※ 3D 툴에서 <b>텍스처를 FBX에 내장(Embed Media)</b>해 export 하면 ZIP 없이 FBX 하나로도 텍스처가 표시됩니다.
+            </p>
+          </div>
         </div>
 
         <Button type="submit" disabled={loading} className="w-full">
