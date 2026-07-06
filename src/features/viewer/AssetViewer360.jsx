@@ -298,31 +298,41 @@ function basenameOf(value = '') {
   return normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase()
 }
 
-function textureNameAliases(name = '') {
-  const basename = basenameOf(name)
-  if (!basename) return []
-
-  const aliases = new Set([basename])
-  if (basename.endsWith('.jpg')) {
-    aliases.add(`${basename.slice(0, -4)}.jpeg`)
-  } else if (basename.endsWith('.jpeg')) {
-    aliases.add(`${basename.slice(0, -5)}.jpg`)
-  }
-
-  return [...aliases]
+// 파일명에서 확장자를 뗀 stem. 예: foo_diff_1k.png → foo_diff_1k
+function textureStem(basename) {
+  const dot = basename.lastIndexOf('.')
+  return dot > 0 ? basename.slice(0, dot) : basename
 }
 
+// 해상도 접미사(_1k/_2k/_4k/_2048 ...)까지 제거한 매칭 키.
+// 텍스처는 1k/2k/4k 해상도, png/jpg/exr 포맷 등 "같은 텍스처의 변형"으로 배포되는 일이 많아,
+// FBX 참조와 zip 파일의 확장자·해상도가 달라도 같은 텍스처로 보고 매칭하기 위한 것.
+function textureMatchKey(basename) {
+  return textureStem(basename).replace(/[_\-.]?(?:\d+k|1024|2048|4096|8192)$/i, '')
+}
+
+// 3단 매칭 맵: 정확(basename) → 확장자무시(stem) → 해상도+확장자무시(key)
 function buildTextureUrlMap(textures = []) {
-  const map = new Map()
+  const byBasename = new Map()
+  const byStem = new Map()
+  const byKey = new Map()
   textures.forEach(texture => {
     const url = texture?.url || texture?.accessUrl
     if (!url) return
     const resolvedUrl = resolveS3AssetUrl(url)
-    const originalName = texture.originalName || basenameOf(url)
-    textureNameAliases(originalName).forEach(alias => map.set(alias, resolvedUrl))
-    textureNameAliases(url).forEach(alias => map.set(alias, resolvedUrl))
+    const name = basenameOf(texture.originalName || url)
+    if (!name) return
+
+    byBasename.set(name, resolvedUrl)
+    if (name.endsWith('.jpg')) byBasename.set(`${name.slice(0, -4)}.jpeg`, resolvedUrl)
+    else if (name.endsWith('.jpeg')) byBasename.set(`${name.slice(0, -5)}.jpg`, resolvedUrl)
+
+    const stem = textureStem(name)
+    if (!byStem.has(stem)) byStem.set(stem, resolvedUrl)
+    const key = textureMatchKey(name)
+    if (key && !byKey.has(key)) byKey.set(key, resolvedUrl)
   })
-  return map
+  return { byBasename, byStem, byKey }
 }
 
 function resolveS3AssetUrl(url) {
@@ -336,13 +346,18 @@ function resolveS3AssetUrl(url) {
   return url
 }
 
-function resolveRelativeAssetUrl(assetUrl, modelUrl, textureUrlMap) {
+function resolveRelativeAssetUrl(assetUrl, modelUrl, textureMaps) {
   // FBX 내장(embedded) 텍스처는 FBXLoader 가 blob:/data: URL 로 로드한다.
   // 이걸 절대 건드리면 안 된다 — 아래 상대경로 해석에 걸려 pathname 만 남으면
   // 내장 텍스처가 통째로 깨진다(자동차 바디가 검게 나오던 진짜 원인).
   if (assetUrl.startsWith('blob:') || assetUrl.startsWith('data:')) return assetUrl
 
-  const textureUrl = textureUrlMap.get(basenameOf(assetUrl))
+  // 정확 일치 → 확장자무시(stem) → 해상도+확장자무시(key) 순으로 매칭.
+  // FBX가 diff_1k.jpg 를 참조해도 zip 의 diff_1k.png / diff.png 를 찾아 붙일 수 있게 한다.
+  const name = basenameOf(assetUrl)
+  const textureUrl = textureMaps.byBasename.get(name)
+    || textureMaps.byStem.get(textureStem(name))
+    || textureMaps.byKey.get(textureMatchKey(name))
   if (textureUrl) return textureUrl
 
   if (assetUrl.startsWith('/')) return assetUrl
