@@ -5,6 +5,7 @@ import Button from '../components/Button'
 import TagInput from '../features/post/TagInput'
 import CategorySelector from '../features/post/CategorySelector'
 import { toAssetZipFile } from '../utils/assetZip'
+import { validateAssetPackage } from '../utils/validateAssetPackage'
 
 const inputCls = 'w-full rounded-lg border border-[#C9CAAC]/80 bg-white px-3 py-2 text-sm outline-none focus:border-[#869B7E] transition-colors'
 
@@ -32,6 +33,12 @@ export default function CreateAssetPage() {
     if (!categoryId) { setError('카테고리는 소분류까지 선택해야 합니다.'); return }
     if (!thumbnail) { setError('썸네일 이미지는 필수입니다.'); return }
     if (!assetPackage) { setError('GLB, FBX 또는 ZIP 파일은 필수입니다.'); return }
+
+    // 업로드 전 사전검사: FBX가 참조하는 텍스처가 실제로 포함됐는지 브라우저에서 확인
+    const check = await validateAssetPackage(assetPackage)
+    if (!check.ok) { setError(check.message); return }
+    if (check.warning && !window.confirm(`${check.warning}\n\n그대로 등록할까요?`)) return
+
     setLoading(true)
     try {
       const assetZip = await toAssetZipFile(assetPackage)
@@ -54,7 +61,7 @@ export default function CreateAssetPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-slate-900 mb-6">에셋 등록</h1>
-      {error && <p className="text-crimson-600 text-sm mb-3">{error}</p>}
+      {error && <p className="text-crimson-600 text-sm mb-3 whitespace-pre-line">{error}</p>}
 
       <form onSubmit={onSubmit} className="flex flex-col gap-5 bg-white border border-[#C9CAAC]/40 rounded-2xl p-6">
         <div>
