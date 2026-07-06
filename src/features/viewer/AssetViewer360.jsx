@@ -165,21 +165,62 @@ function HdrEnvironment({ url, extension }) {
 
 function applyWireframe(obj, wireframe) {
   obj.traverse(child => {
-    if (child.isMesh) {
-      const mats = Array.isArray(child.material) ? child.material : [child.material]
-      mats.forEach(m => { if (m) m.wireframe = wireframe })
+    if (!child.isMesh) return
+
+    if (wireframe) {
+      if (!child.userData.assetboxSolidMaterial) {
+        child.userData.assetboxSolidMaterial = child.material
+      }
+
+      if (child.userData.assetboxWireframeMaterial) {
+        child.material = child.userData.assetboxWireframeMaterial
+        return
+      }
+
+      const sourceMaterials = Array.isArray(child.userData.assetboxSolidMaterial)
+        ? child.userData.assetboxSolidMaterial
+        : [child.userData.assetboxSolidMaterial]
+
+      const wireMaterials = sourceMaterials.map(material => new THREE.MeshBasicMaterial({
+        color: 0x475569,
+        wireframe: true,
+        transparent: false,
+        opacity: 1,
+        depthTest: true,
+        depthWrite: true,
+        side: material?.side ?? THREE.DoubleSide,
+      }))
+
+      child.material = Array.isArray(child.userData.assetboxSolidMaterial)
+        ? wireMaterials
+        : wireMaterials[0]
+      child.userData.assetboxWireframeMaterial = child.material
+      return
+    }
+
+    if (child.userData.assetboxSolidMaterial) {
+      const wireMaterials = Array.isArray(child.userData.assetboxWireframeMaterial)
+        ? child.userData.assetboxWireframeMaterial
+        : [child.userData.assetboxWireframeMaterial]
+      wireMaterials.forEach(material => {
+        if (material?.wireframe) material.dispose?.()
+      })
+      child.material = child.userData.assetboxSolidMaterial
+      delete child.userData.assetboxSolidMaterial
+      delete child.userData.assetboxWireframeMaterial
     }
   })
 }
 
 function shouldPreserveTransparency(material) {
   const name = `${material?.name ?? ''}`.toLowerCase()
-  return name.includes('glass')
+  const namedTransparent = name.includes('glass')
     || name.includes('window')
     || name.includes('transparent')
-    || name.includes('alpha')
     || name.includes('유리')
     || name.includes('창문')
+
+  return namedTransparent
 }
 
 function normalizeFbxMaterials(obj) {
@@ -221,8 +262,9 @@ function classifyTextureRole(name = '') {
   if (/(^|[_\-.])(normal|nor|nrm|nor_gl|normal_gl|normaldx|normal_dx)([_\-.]|$)/.test(cleanName)) return 'normalMap'
   if (/(^|[_\-.])(rough|roughness)([_\-.]|$)/.test(cleanName)) return 'roughnessMap'
   if (/(^|[_\-.])(metal|metallic|metalness)([_\-.]|$)/.test(cleanName)) return 'metalnessMap'
-  if (/(^|[_\-.])(ao|occlusion|ambient_occlusion)([_\-.]|$)/.test(cleanName)) return 'aoMap'
+  if (/(^|[_\-.])(ao|occlusion|ambient_occlusion)([_\-.]|$)/.test(cleanName)) return null
   if (/(^|[_\-.])(alpha|opacity|transparent)([_\-.]|$)/.test(cleanName)) return 'alphaMap'
+  if (/\.(png|jpe?g|webp)$/i.test(cleanName)) return 'map'
   return null
 }
 
@@ -455,6 +497,7 @@ function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
         return
       }
 
+      applyWireframe(fbx, false)
       applyViewerTextures(fbx, loadedEntries)
       normalizeFbxMaterials(fbx)
       applyWireframe(fbx, wireframe)
