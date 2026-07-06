@@ -44,15 +44,38 @@ function extractReferencedBasenames(fbxBytes) {
   return refs
 }
 
-function presentWithAlias(textureBasenames) {
-  const set = new Set()
+// 확장자를 뗀 stem. foo_diff_1k.png → foo_diff_1k
+function textureStem(name) {
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(0, dot) : name
+}
+
+// 해상도 접미사(_1k/_2k/_4k/_2048 ...)까지 제거한 매칭 키. foo_diff_1k → foo_diff
+function textureMatchKey(name) {
+  return textureStem(name).replace(/[_\-.]?(?:\d+k|1024|2048|4096|8192)$/i, '')
+}
+
+// 뷰어와 동일한 3단 매칭 기준으로 zip 텍스처를 색인.
+function buildPresentSets(textureBasenames) {
+  const byBasename = new Set()
+  const byStem = new Set()
+  const byKey = new Set()
   for (const raw of textureBasenames) {
     const name = basename(raw)
-    set.add(name)
-    if (name.endsWith('.jpg')) set.add(`${name.slice(0, -4)}.jpeg`)
-    else if (name.endsWith('.jpeg')) set.add(`${name.slice(0, -5)}.jpg`)
+    byBasename.add(name)
+    if (name.endsWith('.jpg')) byBasename.add(`${name.slice(0, -4)}.jpeg`)
+    else if (name.endsWith('.jpeg')) byBasename.add(`${name.slice(0, -5)}.jpg`)
+    byStem.add(textureStem(name))
+    byKey.add(textureMatchKey(name))
   }
-  return set
+  return { byBasename, byStem, byKey }
+}
+
+// 정확 → 확장자무시(stem) → 해상도+확장자무시(key) 중 하나라도 맞으면 존재로 본다.
+function refIsMissing(ref, present) {
+  return !present.byBasename.has(ref)
+    && !present.byStem.has(textureStem(ref))
+    && !present.byKey.has(textureMatchKey(ref))
 }
 
 /**
@@ -92,8 +115,8 @@ export async function validateAssetPackage(file) {
     const refs = extractReferencedBasenames(fbxBytes)
     if (refs.size === 0) return { ok: true } // 참조하는 외부 텍스처 없음
 
-    const present = presentWithAlias(textureBasenames)
-    const missing = [...refs].filter(ref => !present.has(ref))
+    const present = buildPresentSets(textureBasenames)
+    const missing = [...refs].filter(ref => refIsMissing(ref, present))
 
     if (missing.length === refs.size) {
       const list = missing.slice(0, 4).join(', ') + (missing.length > 4 ? ' 외' : '')
