@@ -258,14 +258,57 @@ function textureExtension(name = '') {
 
 function classifyTextureRole(name = '') {
   const cleanName = basenameOf(name)
-  if (/(^|[_\-.])(diff|diffuse|basecolor|base_color|albedo|color|col)([_\-.]|$)/.test(cleanName)) return 'map'
-  if (/(^|[_\-.])(normal|nor|nrm|nor_gl|normal_gl|normaldx|normal_dx)([_\-.]|$)/.test(cleanName)) return 'normalMap'
-  if (/(^|[_\-.])(rough|roughness)([_\-.]|$)/.test(cleanName)) return 'roughnessMap'
-  if (/(^|[_\-.])(metal|metallic|metalness)([_\-.]|$)/.test(cleanName)) return 'metalnessMap'
-  if (/(^|[_\-.])(ao|occlusion|ambient_occlusion)([_\-.]|$)/.test(cleanName)) return null
-  if (/(^|[_\-.])(alpha|opacity|transparent)([_\-.]|$)/.test(cleanName)) return 'alphaMap'
+  if (/(normal|nrm|nor_gl|normal_gl|normaldx|normal_dx)(?=\.|_|-|$)/.test(cleanName)) return 'normalMap'
+  if (/(rough|roughness)(?=\.|_|-|$)/.test(cleanName)) return 'roughnessMap'
+  if (/(metal|metallic|metalness)(?=\.|_|-|$)/.test(cleanName)) return 'metalnessMap'
+  if (/(^|[_\-.])(alpha|transparent)([_\-.]|$)/.test(cleanName)) return 'alphaMap'
+  if (/(diff|diffuse|basecolor|base_color|albedo|color|col|texture)(?=\.|_|-|$)/.test(cleanName)) return 'map'
+  if (/(ao|aoso|occlusion|ambient_occlusion|mask|material|opacity)(?=\.|_|-|$)/.test(cleanName)) return null
   if (/\.(png|jpe?g|webp)$/i.test(cleanName)) return 'map'
   return null
+}
+
+function textureMatchText(value = '') {
+  return basenameOf(value)
+    .replace(/\.[^.]+$/, '')
+    .replace(/(diffuse|diff|basecolor|base_color|albedo|color|col|texture|normal|nrm|roughness|rough|metallic|metalness|metal|alpha|transparent|ao|aoso|occlusion|ambient_occlusion|mask|material|opacity)/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function compactMatchText(value = '') {
+  return textureMatchText(value).replace(/\s+/g, '')
+}
+
+function textureMatchScore(entry, material, mesh) {
+  const textureText = textureMatchText(entry?.name || entry?.texture?.name)
+  const textureCompact = compactMatchText(entry?.name || entry?.texture?.name)
+  const targetText = `${material?.name ?? ''} ${mesh?.name ?? ''}`.toLowerCase()
+  const targetCompact = targetText.replace(/[^a-z0-9]+/g, '')
+
+  if (!textureCompact || !targetCompact) return 0
+  if (targetCompact.includes(textureCompact) || textureCompact.includes(targetCompact)) return 100
+
+  return textureText
+    .split(/\s+/)
+    .filter(token => token.length >= 3 && targetCompact.includes(token))
+    .reduce((score, token) => score + token.length, 0)
+}
+
+function pickTextureEntry(entries, material, mesh) {
+  if (entries.length <= 1) return entries[0] ?? null
+
+  let best = null
+  let bestScore = 0
+  entries.forEach(entry => {
+    const score = textureMatchScore(entry, material, mesh)
+    if (score > bestScore) {
+      best = entry
+      bestScore = score
+    }
+  })
+
+  return bestScore > 0 ? best : null
 }
 
 function loadViewerTexture(texture) {
@@ -286,7 +329,7 @@ function loadViewerTexture(texture) {
         loadedTexture.wrapS = THREE.RepeatWrapping
         loadedTexture.wrapT = THREE.RepeatWrapping
         if (role === 'map') loadedTexture.colorSpace = THREE.SRGBColorSpace
-        resolve({ role, texture: loadedTexture })
+        resolve({ role, texture: loadedTexture, name })
       },
       undefined,
       err => {
@@ -324,6 +367,11 @@ function toStandardMaterial(material) {
 function applyViewerTextures(obj, textureEntries) {
   const maps = textureEntries.filter(Boolean)
   if (!obj || maps.length === 0) return
+  const mapsByRole = maps.reduce((acc, entry) => {
+    acc[entry.role] = acc[entry.role] ?? []
+    acc[entry.role].push(entry)
+    return acc
+  }, {})
 
   obj.traverse(child => {
     if (!child.isMesh) return
@@ -337,8 +385,10 @@ function applyViewerTextures(obj, textureEntries) {
     materials.forEach(material => {
       if (!material) return
 
-      maps.forEach(({ role, texture }) => {
-        if (role in material) material[role] = texture
+      Object.entries(mapsByRole).forEach(([role, entries]) => {
+        if (!(role in material)) return
+        const entry = pickTextureEntry(entries, material, child)
+        if (entry) material[role] = entry.texture
       })
 
       if (material.map) {
