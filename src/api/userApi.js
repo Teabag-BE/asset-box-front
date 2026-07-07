@@ -5,7 +5,13 @@ export const userApi = {
   me: () => request('/users/me'),
   // 특정 유저 프로필
   getById: (id) => request(`/users/${id}`),
-  // 내 아바타 업로드 (텍스트 정보 수정 API는 아직 없음 → 닉네임/소개 수정은 보류)
+  // 내 프로필 수정 (닉네임/소개/전공/공개이메일) — 백엔드 PUT /users/me
+  updateMe: ({ nickname, description, major, publicEmail }) =>
+    request('/users/me', {
+      method: 'PUT',
+      body: JSON.stringify({ nickname, description, major, publicEmail }),
+    }),
+  // 내 아바타 업로드
   uploadAvatar: (file) => {
     const fd = new FormData()
     fd.append('file', file)
