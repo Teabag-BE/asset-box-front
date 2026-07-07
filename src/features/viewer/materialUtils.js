@@ -236,6 +236,93 @@ export function autoFixMaterials(root, textureUrls = []) {
   return fixedCount
 }
 
+// ── B-2. GLB 보수적 폴백 ──────────────────────────────────────────────
+//
+// GLB(glTF)는 대부분 저작(authored) 머티리얼이 온전하므로 autoFixMaterials 처럼
+// 적극적으로 손대면 정상 모델에 회귀가 난다. 여기서는 "머티리얼이 아예 없거나,
+// 색·텍스처·버텍스컬러·emissive 가 전부 없어 새까맣게/안 보이게 렌더될" 머티리얼만
+// 중립 클레이로 구제한다. 그 외 authored 머티리얼은 절대 건드리지 않는다.
+
+// 색이 사실상 검정인가? (r+g+b < 0.06 이면 거의 검정으로 간주)
+function isEffectivelyBlack(color) {
+  if (!color) return true
+  return (color.r + color.g + color.b) < 0.06
+}
+
+// 이 머티리얼이 "비어서 검게 뜰" 머티리얼인가?
+//   교체 대상이 되려면 아래를 모두 만족해야 한다:
+//     - 색 텍스처(map) 없음
+//     - 버텍스컬러(vertexColors) 없음
+//     - emissiveMap 없음
+//     - emissive 색이 사실상 검정 (없으면 방출 없음 → 검정 취급)
+//     - base color 가 사실상 검정
+//   하나라도 어긋나면(색/텍스처/버텍스컬러/emissive 있음) authored 로 보고 보존.
+function isEmptyBlackMaterial(material) {
+  if (!material) return false
+  if (material.map) return false
+  if (material.vertexColors) return false
+  if (material.emissiveMap) return false
+  // emissive 가 있고 검정이 아니면 방출이 있으므로 보존.
+  if (material.emissive && !isEffectivelyBlack(material.emissive)) return false
+  // base color 가 검정이 아니면 색이 있으므로 보존.
+  if (!isEffectivelyBlack(material.color)) return false
+  return true
+}
+
+/**
+ * GLB 전용 보수적 폴백. root 를 순회하며 각 mesh 에 대해 —
+ *   - 머티리얼이 아예 없으면 → neutralMaterial() 적용(+원본 stash).
+ *   - 머티리얼(배열 포함) 중 isEmptyBlackMaterial 을 만족하는 것만 중립 클레이로 교체.
+ *   - 그 외(색/텍스처/버텍스컬러/emissive/투명 등 authored)는 절대 보존.
+ * 전부 try/catch. 원본은 mesh.userData.assetboxOriginalMaterial 에 stash(피커 '원본' 호환).
+ * @returns {number} 교체한 머티리얼 수(디버그용)
+ */
+export function neutralizeEmptyMaterials(root) {
+  if (!root || typeof root.traverse !== 'function') return 0
+  let fixedCount = 0
+
+  root.traverse((child) => {
+    try {
+      if (!child.isMesh) return
+
+      // 머티리얼이 아예 없는 메시 → 중립 클레이.
+      if (!child.material) {
+        stashOriginal(child)
+        child.material = neutralMaterial()
+        fixedCount += 1
+        return
+      }
+
+      const materials = asMaterialArray(child.material)
+      let mutated = false
+      const nextMaterials = materials.map((material) => {
+        try {
+          if (isEmptyBlackMaterial(material)) {
+            // 교체 전 원본 stash(최초 1회). authored side 승계.
+            stashOriginal(child)
+            const clay = neutralMaterial()
+            carryOverSide(material, clay)
+            mutated = true
+            fixedCount += 1
+            return clay
+          }
+        } catch {
+          // 개별 머티리얼 판정 실패는 원본 유지.
+        }
+        return material
+      })
+
+      if (mutated) {
+        child.material = Array.isArray(child.material) ? nextMaterials : nextMaterials[0]
+      }
+    } catch {
+      // 개별 메시 처리 실패는 무시하고 다음 메시로.
+    }
+  })
+
+  return fixedCount
+}
+
 // ── C. 머티리얼 피커 프리셋 ────────────────────────────────────────────
 
 // 프리셋: label 로 UI 노출, build()로 새 MeshStandardMaterial 생성.
