@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/immutability, react-hooks/exhaustive-deps */
 // react-three-fiber 뷰어: useFrame/useThree 안에서 camera·scene 을 직접 변경하는 건
 // r3f 의 정상 관용구라 react-hooks lint 규칙을 이 파일에 한해 끈다.
-import { Suspense, useState, useRef, useEffect, Component } from 'react'
+import { Suspense, useState, useRef, useEffect, useMemo, Component } from 'react'
 import { Canvas, useLoader, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF, useProgress, Html, Center } from '@react-three/drei'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
@@ -823,6 +823,186 @@ function ViewerFallback({ thumbnailUrl, modelUrl, message = '미리보기를 불
   )
 }
 
+// D. 모델 스탯 — 로드된 THREE 객체를 순회하며 폴리 예산 지표를 집계한다.
+// 테크니컬 아티스트가 삼각형/버텍스/메시/머티리얼/텍스처 수를 바로 확인하도록.
+// 모든 계산은 useMemo(순수 계산) 안에서만 → set-state-in-effect 규칙과 무관.
+
+// 삼각형 100k 이상이면 폴리 예산 경고(모바일/실시간 기준 대략적인 임계치).
+const TRI_WARN_THRESHOLD = 100000
+
+// 머티리얼에서 텍스처가 들어갈 수 있는 슬롯 — 존재하는 THREE.Texture 만 Set 에 모은다.
+const TEXTURE_SLOTS = [
+  'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'bumpMap',
+]
+
+// 천단위 콤마 포맷.
+function formatNum(n) {
+  try {
+    return Number(n || 0).toLocaleString('en-US')
+  } catch {
+    return String(n)
+  }
+}
+
+// loadedObj 순회 → 스탯 집계. 예외가 나도 뷰어를 죽이지 않도록 try/catch 로 감싼다.
+function computeModelStats(obj) {
+  if (!obj) return null
+  try {
+    let triangles = 0
+    let vertices  = 0
+    let meshCount = 0
+    const materials = new Set()
+    const textures  = new Set()
+
+    obj.traverse((node) => {
+      if (!node.isMesh || !node.geometry) return
+      meshCount += 1
+
+      const geo = node.geometry
+      const pos = geo.attributes && geo.attributes.position
+      if (pos) vertices += pos.count
+      if (geo.index) triangles += geo.index.count / 3
+      else if (pos) triangles += pos.count / 3
+
+      // 머티리얼은 단일/배열 모두 가능 — 배열로 펼쳐 고유 집합에 모은다.
+      const mats = Array.isArray(node.material) ? node.material : [node.material]
+      mats.forEach((mat) => {
+        if (!mat) return
+        materials.add(mat)
+        TEXTURE_SLOTS.forEach((slot) => {
+          const tex = mat[slot]
+          if (tex && tex.isTexture) textures.add(tex)
+        })
+      })
+    })
+
+    // 바운딩 비율 — 모델은 정규화(크기 2.8)돼 있어 실치수는 무의미. 최대변 기준 상대비만.
+    let ratio = null
+    try {
+      const box = new THREE.Box3().setFromObject(obj)
+      if (!box.isEmpty()) {
+        const size = box.getSize(new THREE.Vector3())
+        const max  = Math.max(size.x, size.y, size.z) || 1
+        ratio = {
+          x: size.x / max,
+          y: size.y / max,
+          z: size.z / max,
+        }
+      }
+    } catch (err) {
+      console.warn('[모델스탯] 바운딩 계산 실패:', err)
+    }
+
+    return {
+      triangles: Math.round(triangles),
+      vertices,
+      meshCount,
+      materialCount: materials.size,
+      textureCount: textures.size,
+      ratio,
+    }
+  } catch (err) {
+    console.warn('[모델스탯] 집계 실패:', err)
+    return null
+  }
+}
+
+// 스탯 표시 UI — 좌상단. MaterialLab(우상단)·ViewerControls(우하단)·LightingPicker(좌하단)와
+// 안 겹치게 좌상단에 둔다. 기본은 작은 📊 토글, 클릭하면 스탯 패널을 펼친다.
+function ModelStats({ obj }) {
+  const [open, setOpen] = useState(false)
+  // obj 가 바뀔 때만 재계산(순수 useMemo).
+  const stats = useMemo(() => computeModelStats(obj), [obj])
+
+  if (!stats) return null
+
+  const heavy = stats.triangles >= TRI_WARN_THRESHOLD
+
+  const rows = [
+    { label: '삼각형', value: formatNum(stats.triangles), emphasize: true },
+    { label: '버텍스', value: formatNum(stats.vertices) },
+    { label: '메시', value: formatNum(stats.meshCount) },
+    { label: '머티리얼', value: formatNum(stats.materialCount) },
+    { label: '텍스처', value: formatNum(stats.textureCount) },
+  ]
+  if (stats.ratio) {
+    const r = stats.ratio
+    rows.push({
+      label: '비율 (W:H:D)',
+      value: `${r.x.toFixed(2)} : ${r.y.toFixed(2)} : ${r.z.toFixed(2)}`,
+    })
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        title="모델 스탯 — 폴리 예산 보기"
+        style={{
+          position: 'absolute', top: 10, left: 10, zIndex: 10,
+          padding: '4px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+          fontSize: 14, fontWeight: 600,
+          background: 'rgba(255,255,255,0.92)',
+          color: heavy ? '#ef4444' : '#6d28d9',
+          backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+        }}
+      >📊</button>
+    )
+  }
+
+  return (
+    <div style={{
+      position: 'absolute', top: 10, left: 10, zIndex: 10,
+      minWidth: 200, background: 'rgba(255,255,255,0.92)',
+      backdropFilter: 'blur(4px)', borderRadius: 10, padding: 10,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.12)', fontSize: 12, color: '#475569',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 8,
+      }}>
+        <span style={{ fontWeight: 700, color: '#6d28d9' }}>📊 모델 스탯</span>
+        <button
+          onClick={() => setOpen(false)}
+          title="접기"
+          style={{
+            border: 'none', background: 'transparent', cursor: 'pointer',
+            color: '#94a3b8', fontSize: 14, lineHeight: 1, padding: 0,
+          }}
+        >✕</button>
+      </div>
+
+      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <td style={{ padding: '2px 8px 2px 0', color: '#64748b', whiteSpace: 'nowrap' }}>
+                {row.label}
+              </td>
+              <td style={{
+                padding: '2px 0', textAlign: 'right', whiteSpace: 'nowrap',
+                fontWeight: row.emphasize ? 700 : 500,
+                fontSize: row.emphasize ? 14 : 12,
+                color: row.emphasize ? (heavy ? '#ef4444' : '#6d28d9') : '#334155',
+              }}>
+                {row.value}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {heavy && (
+        <div style={{
+          marginTop: 8, padding: '4px 8px', borderRadius: 6,
+          background: 'rgba(239,68,68,0.12)', color: '#ef4444',
+          fontSize: 11, fontWeight: 600,
+        }}>⚠ 폴리곤 예산 초과 주의 (100k+)</div>
+      )}
+    </div>
+  )
+}
+
 const SUPPORTED = ['glb', 'gltf', 'fbx', 'obj']
 
 export default function AssetViewer360({
@@ -1046,9 +1226,12 @@ export default function AssetViewer360({
         />
       )}
 
+      {loadedObj && <ModelStats obj={loadedObj} />}
+
+      {/* 내장 조명 배지 — 좌상단 ModelStats(top 10) 아래로 내려 겹침 방지. */}
       {embeddedLights && (
         <div style={{
-          position: 'absolute', top: 10, left: 10,
+          position: 'absolute', top: 44, left: 10,
           background: 'rgba(109,40,217,0.85)', color: '#fff',
           fontSize: 11, padding: '3px 8px', borderRadius: 99
         }}>💡 블렌더 내장 조명</div>
