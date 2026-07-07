@@ -218,25 +218,28 @@ async function validateFbx(fbxBytes, presentTextures, notes = [], allTextureName
   const missing = [...refs].filter(ref => refIsMissing(ref, present))
 
   // 참조 텍스처가 전부 빠짐.
+  // 뷰어가 이제 관대하게(형제 텍스처 자동 매핑 + 중립 클레이 폴백) 처리하므로,
+  // 텍스처 이유로는 절대 차단(ok:false)하지 않는다 — 경고만 남기고 통과시킨다.
   if (missing.length === refs.size) {
     // 텍스처 파일을 "넣긴 넣었는데" FBX가 가리키는 이름과 다른 경우(예: Sketchfab export).
-    // 차단하지 않고 경고만 — 지오메트리는 정상이고 다운로드도 되며, 오차단이 더 답답하다.
     if (allTextureNames.length > 0) {
       return withNotes({
         ok: true,
         warning: `FBX가 참조하는 텍스처 이름(${formatList([...missing], 4)})이 함께 올린 파일과 달라서,\n`
-          + '뷰어에서 텍스처가 안 보일 수 있어요(모델 자체는 등록·다운로드됩니다).\n'
+          + '뷰어가 이름으로 자동 매칭을 시도합니다(안 맞으면 중립 클레이 재질로 표시).\n'
           + `포함된 텍스처: ${formatList(allTextureNames, 4)}\n`
-          + '텍스처까지 보이게 하려면 FBX에 내장(Embed Media)해 export 하거나 GLB로 올리는 걸 권장해요.',
+          + '텍스처까지 정확히 보이게 하려면 FBX에 내장(Embed Media)해 export 하거나 GLB로 올리는 걸 권장해요.',
       })
     }
-    // 텍스처 파일 자체가 하나도 없음 — 정말로 빠뜨린 경우. 안내하며 차단.
-    return {
-      ok: false,
-      message: `FBX가 참조하는 텍스처가 업로드 파일에 없습니다: ${formatList([...missing], 4)}\n`
-        + (notes.length ? `${notes.join('\n')}\n` : '')
-        + 'FBX가 참조하는 이름 그대로 텍스처를 ZIP에 포함하거나, 텍스처를 FBX에 내장(Embed Media)해 export 하거나, GLB로 올려주세요.',
-    }
+    // 텍스처 파일 자체가 하나도 없음 — 예전엔 차단했으나, 이제 경고만.
+    // 뷰어가 중립 클레이 재질로 항상 그럴듯하게 렌더하고, 모델은 정상 등록·다운로드된다.
+    return withNotes({
+      ok: true,
+      warning: `FBX가 참조하는 텍스처가 업로드 파일에 없습니다: ${formatList([...missing], 4)}\n`
+        + '뷰어에서 중립 클레이 재질로 표시되며, 모델 자체는 등록·다운로드됩니다.\n'
+        + '텍스처까지 보이게 하려면 FBX가 참조하는 이름 그대로 ZIP에 포함하거나,\n'
+        + '텍스처를 FBX에 내장(Embed Media)해 export 하거나, GLB로 올려주세요.',
+    })
   }
 
   // 일부만 빠짐 — 통과시키되 경고.

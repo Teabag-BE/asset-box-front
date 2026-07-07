@@ -10,6 +10,14 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import * as THREE from 'three'
+import {
+  autoFixMaterials,
+  classifyTextures,
+  hasAnyDetectedTexture,
+  applyPreset,
+  MATERIAL_PRESETS,
+  DETECTED_PRESET_ID,
+} from './materialUtils'
 
 class ErrorBoundary extends Component {
   state = { hasError: false }
@@ -402,6 +410,9 @@ function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
         // FBX 자체 재질/텍스처 바인딩을 그대로 존중한다(역할 추측·재질 재구성 없음).
         relaxFbxCulling(obj)
         normalizeModelObject(obj)
+        // 관대화 보정: 색 텍스처가 없는(!material.map) 머티리얼만 형제 텍스처/중립 클레이로 보정.
+        // 정상·내장 텍스처 머티리얼은 건드리지 않는다. 예외 시 원래 결과 그대로.
+        try { autoFixMaterials(obj, textureUrls) } catch (e) { console.warn('[FbxModel] autoFixMaterials 실패, 원본 유지:', e) }
         setFbx(obj)
         onLoaded?.(obj)
       },
@@ -417,11 +428,13 @@ function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
   return fbx ? <primitive object={fbx} /> : null
 }
 
-function ObjModel({ url, wireframe, onLoaded }) {
+function ObjModel({ url, textureUrls, wireframe, onLoaded }) {
   const obj = useLoader(OBJLoader, url)
   useEffect(() => {
     if (!obj) return
     normalizeModelObject(obj)
+    // 관대화 보정: FBX 와 동일하게 색 텍스처 없는 머티리얼만 보정. 예외 시 원본 유지.
+    try { autoFixMaterials(obj, textureUrls) } catch (e) { console.warn('[ObjModel] autoFixMaterials 실패, 원본 유지:', e) }
     applyWireframe(obj, wireframe)
     onLoaded?.(obj)
   }, [obj])
@@ -433,7 +446,7 @@ function ModelLoader({ url, extension, textureUrls, wireframe, onLoaded, onLight
   if (extension === 'glb' || extension === 'gltf')
     return <GltfModel url={url} wireframe={wireframe} onLoaded={onLoaded} onLightsDetected={onLightsDetected} />
   if (extension === 'fbx') return <FbxModel url={url} textureUrls={textureUrls} wireframe={wireframe} onLoaded={onLoaded} />
-  if (extension === 'obj') return <ObjModel url={url} wireframe={wireframe} onLoaded={onLoaded} />
+  if (extension === 'obj') return <ObjModel url={url} textureUrls={textureUrls} wireframe={wireframe} onLoaded={onLoaded} />
   return null
 }
 
@@ -456,6 +469,73 @@ function ViewerControls({ autoRotate, wireframe, capturing, onToggleRotate, onTo
       {btn(wireframe,  onToggleWireframe, '⬡', '와이어프레임')}
       {btn(false, onReset, '⌖', '카메라 초기화')}
       {btn(capturing, onCapture, capturing ? '⏹' : '🎬', capturing ? '녹화 중지' : '360° 프리뷰 캡처', capturing ? 'danger' : '')}
+    </div>
+  )
+}
+
+// C. 머티리얼 피커 — 로드된 root 의 모든 mesh material 을 프리셋으로 즉시 교체.
+// three 객체를 직접 수정하고, 리렌더가 필요하면 상태 토글(tick)로만 갱신한다.
+function MaterialPicker({ root, textureUrls = [] }) {
+  const [open, setOpen] = useState(false)
+  const [, setTick] = useState(0)
+
+  if (!root) return null
+
+  // A 에서 감지된 텍스처가 있으면 "감지된 텍스처 적용" 옵션을 추가로 노출.
+  let classified = null
+  try { classified = classifyTextures(textureUrls) } catch { classified = null }
+  const showDetected = hasAnyDetectedTexture(classified)
+
+  const presets = showDetected
+    ? [...MATERIAL_PRESETS, { id: DETECTED_PRESET_ID, label: '감지된 텍스처 적용' }]
+    : MATERIAL_PRESETS
+
+  const handlePick = (preset) => {
+    try {
+      applyPreset(root, preset, classified)
+    } catch (e) {
+      console.warn('[MaterialPicker] applyPreset 실패:', e)
+    }
+    // three 객체 직접 수정 후 리렌더 유도(이벤트 핸들러 안이라 lint 위반 아님).
+    setTick(t => t + 1)
+  }
+
+  const chipStyle = {
+    padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0',
+    cursor: 'pointer', fontSize: 12, background: '#fff', color: '#475569',
+    whiteSpace: 'nowrap',
+  }
+
+  return (
+    <div style={{
+      position: 'absolute', top: 12, right: 12, zIndex: 10,
+      display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
+    }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        title="머티리얼 프리셋"
+        style={{
+          padding: '4px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+          fontSize: 13, fontWeight: 600,
+          background: 'rgba(255,255,255,0.92)', color: '#6d28d9',
+          backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+        }}
+      >🎨 머티리얼</button>
+
+      {open && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 4,
+          background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(4px)',
+          borderRadius: 10, padding: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+          maxWidth: 180,
+        }}>
+          {presets.map(preset => (
+            <button key={preset.id} onClick={() => handlePick(preset)} style={chipStyle}>
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -600,6 +680,8 @@ export default function AssetViewer360({
           else { setAutoRotate(false); setCapturing(true) }
         }}
       />
+
+      {loadedObj && <MaterialPicker root={loadedObj} textureUrls={textureUrls} />}
 
       {embeddedLights && (
         <div style={{
