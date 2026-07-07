@@ -8,6 +8,7 @@ import Spinner from '../components/Spinner'
 import Button from '../components/Button'
 import Badge from '../components/Badge'
 import Avatar from '../components/Avatar'
+import CommentSection from '../features/post/CommentSection'
 
 // three.js 묶음은 무거우니 모델이 있을 때만 lazy 로드
 const AssetViewer360 = lazy(() => import('../features/viewer/AssetViewer360'))
@@ -167,12 +168,8 @@ export default function AssetDetailPage() {
             </div> */}
           </div>
 
-          {/* 💬 댓글 — 백엔드 CommentController 구현되면 주석 해제
-          <CommentSection targetId={id} type="post" /> */}
-          <div className="bg-white border border-[#C9CAAC]/40 rounded-2xl p-6">
-            <h2 className="font-semibold text-slate-800 text-sm mb-1">💬 댓글</h2>
-            <p className="text-xs text-slate-400">댓글 기능은 백엔드 준비 중입니다.</p>
-          </div>
+          {/* 💬 댓글 */}
+          <CommentSection targetId={id} type="post" />
         </div>
 
         {/* ───── 사이드바 (우, 1칸) ───── */}
