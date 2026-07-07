@@ -23,4 +23,6 @@ export const postApi = {
     return requestMultipart('/posts', fd)
   },
   remove: (id) => request(`/posts/${id}`, { method: 'DELETE' }),
+  // 좋아요 토글 → { likeCount, liked }
+  toggleLike: (id) => request(`/posts/${id}/like`, { method: 'POST' }),
 }
