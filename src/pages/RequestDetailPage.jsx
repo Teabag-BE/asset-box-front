@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { STATUS, STATUS_FLOW, StatusBadge } from '../features/request/requestStatus'
 import Spinner from '../components/Spinner'
 import Button from '../components/Button'
+import CommentSection from '../features/post/CommentSection'
 
 function Field({ label, value }) {
   if (!value) return null
@@ -110,12 +111,8 @@ export default function RequestDetailPage() {
             )}
           </div>
 
-          {/* 💬 요청 댓글 — 백엔드 댓글 CRUD 생기면 주석 해제
-          <CommentSection targetId={id} type="request" /> */}
-          <div className="bg-white border border-[#C9CAAC]/40 rounded-2xl p-6">
-            <h2 className="font-semibold text-slate-800 text-sm mb-1">💬 댓글</h2>
-            <p className="text-xs text-slate-400">댓글 기능은 백엔드 준비 중입니다.</p>
-          </div>
+          {/* 💬 요청 댓글 */}
+          <CommentSection targetId={id} type="request" />
         </div>
 
         {/* 사이드바 */}
