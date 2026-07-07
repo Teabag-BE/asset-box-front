@@ -13,12 +13,14 @@ import * as THREE from 'three'
 import {
   autoFixMaterials,
   neutralizeEmptyMaterials,
-  classifyTextures,
-  hasAnyDetectedTexture,
-  applyPreset,
-  MATERIAL_PRESETS,
-  DETECTED_PRESET_ID,
 } from './materialUtils'
+import {
+  SURFACE_TEXTURES,
+  BASE_PRESETS,
+  DEFAULT_CONFIG,
+  applyMaterialConfig,
+  restoreLab,
+} from './materialLab'
 
 class ErrorBoundary extends Component {
   state = { hasError: false }
@@ -591,38 +593,77 @@ function LightingPicker({ value, onChange }) {
   )
 }
 
-// C. 머티리얼 피커 — 로드된 root 의 모든 mesh material 을 프리셋으로 즉시 교체.
-// three 객체를 직접 수정하고, 리렌더가 필요하면 상태 토글(tick)로만 갱신한다.
-function MaterialPicker({ root, textureUrls = [] }) {
-  const [open, setOpen] = useState(false)
-  const [, setTick] = useState(0)
+// C. 머티리얼 실험실(MaterialLab) — 로드된 root 에 물리 재질을 실시간 조합해 입힌다.
+// 색 + 표면 질감 + 마감 슬라이더 + 고급 속성(투명/유리·발광·클리어코트)을 한 패널에서.
+// three 객체를 직접 수정하고, 리렌더가 필요하면 상태 토글로만 갱신한다.
+// selectedMesh 가 있으면 그 파트에만, 없으면 전체에 적용한다.
+function MaterialLab({
+  root, config, onConfigChange,
+  partSelect, onTogglePartSelect, selectedMesh, onClearSelection,
+}) {
+  const [open, setOpen] = useState(true)
 
   if (!root) return null
 
-  // A 에서 감지된 텍스처가 있으면 "감지된 텍스처 적용" 옵션을 추가로 노출.
-  let classified = null
-  try { classified = classifyTextures(textureUrls) } catch { classified = null }
-  const showDetected = hasAnyDetectedTexture(classified)
-
-  const presets = showDetected
-    ? [...MATERIAL_PRESETS, { id: DETECTED_PRESET_ID, label: '감지된 텍스처 적용' }]
-    : MATERIAL_PRESETS
-
-  const handlePick = (preset) => {
+  // config 병합 후 즉시 적용(모든 호출은 이벤트 핸들러 안 → set-state-in-effect 위반 아님).
+  const apply = (patch) => {
+    const next = { ...config, ...patch }
+    onConfigChange(next)
     try {
-      applyPreset(root, preset, classified)
+      applyMaterialConfig(root, next, selectedMesh || null)
     } catch (e) {
-      console.warn('[MaterialPicker] applyPreset 실패:', e)
+      console.warn('[MaterialLab] applyMaterialConfig 실패:', e)
     }
-    // three 객체 직접 수정 후 리렌더 유도(이벤트 핸들러 안이라 lint 위반 아님).
-    setTick(t => t + 1)
   }
 
-  const chipStyle = {
-    padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0',
-    cursor: 'pointer', fontSize: 12, background: '#fff', color: '#475569',
-    whiteSpace: 'nowrap',
+  const pickBase = (preset) => {
+    try {
+      // 프리셋 params 로 config 의 물리 속성을 덮어쓴다(표면/발광 등 나머지는 유지).
+      apply({
+        color: preset.params.color ?? config.color,
+        metalness: preset.params.metalness ?? config.metalness,
+        roughness: preset.params.roughness ?? config.roughness,
+        clearcoat: preset.params.clearcoat ?? config.clearcoat,
+        transmission: preset.params.transmission ?? 0,
+        ior: preset.params.ior ?? config.ior,
+      })
+    } catch (e) {
+      console.warn('[MaterialLab] pickBase 실패:', e)
+    }
   }
+
+  const handleRestore = () => {
+    try {
+      restoreLab(root)
+    } catch (e) {
+      console.warn('[MaterialLab] restoreLab 실패:', e)
+    }
+    onConfigChange({ ...DEFAULT_CONFIG })
+  }
+
+  const chip = (active, onClick, label, key) => (
+    <button key={key} onClick={onClick} style={{
+      padding: '3px 8px', borderRadius: 6,
+      border: active ? '1px solid #6d28d9' : '1px solid #e2e8f0',
+      cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap',
+      background: active ? '#ede9fe' : '#fff',
+      color: active ? '#6d28d9' : '#475569',
+    }}>{label}</button>
+  )
+
+  const sectionTitle = { fontSize: 11, fontWeight: 700, color: '#334155', margin: '2px 0' }
+  const sliderRow = (label, value) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748b' }}>
+      <span>{label}</span><span>{Number(value).toFixed(2)}</span>
+    </div>
+  )
+  const slider = (key, min, max, step) => (
+    <input
+      type="range" min={min} max={max} step={step} value={config[key]}
+      onChange={(e) => apply({ [key]: parseFloat(e.target.value) })}
+      style={{ width: '100%' }}
+    />
+  )
 
   return (
     <div style={{
@@ -631,27 +672,87 @@ function MaterialPicker({ root, textureUrls = [] }) {
     }}>
       <button
         onClick={() => setOpen(v => !v)}
-        title="머티리얼 프리셋"
+        title="머티리얼 실험실"
         style={{
           padding: '4px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
           fontSize: 13, fontWeight: 600,
           background: 'rgba(255,255,255,0.92)', color: '#6d28d9',
           backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
         }}
-      >🎨 머티리얼</button>
+      >🧪 머티리얼 실험실</button>
 
       {open && (
         <div style={{
-          display: 'flex', flexDirection: 'column', gap: 4,
-          background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(4px)',
-          borderRadius: 10, padding: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-          maxWidth: 180,
+          display: 'flex', flexDirection: 'column', gap: 8,
+          background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(4px)',
+          borderRadius: 10, padding: 10, boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+          width: 220, maxHeight: 'calc(100% - 60px)', overflowY: 'auto',
         }}>
-          {presets.map(preset => (
-            <button key={preset.id} onClick={() => handlePick(preset)} style={chipStyle}>
-              {preset.label}
-            </button>
-          ))}
+          {/* 베이스 재질 */}
+          <div style={sectionTitle}>베이스 재질</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {BASE_PRESETS.map(p => chip(false, () => pickBase(p), p.label, p.id))}
+          </div>
+
+          {/* 표면 질감 */}
+          <div style={sectionTitle}>표면 질감</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {SURFACE_TEXTURES.map(s => chip(
+              config.surfaceId === s.id,
+              () => apply({ surfaceId: s.id }),
+              s.label, s.id,
+            ))}
+          </div>
+          {config.surfaceId !== 'none' && (
+            <>
+              {sliderRow('강도', config.surfaceStrength)}
+              {slider('surfaceStrength', 0, 1, 0.01)}
+            </>
+          )}
+
+          {/* 마감 슬라이더 */}
+          <div style={sectionTitle}>마감</div>
+          {sliderRow('거칠기', config.roughness)}
+          {slider('roughness', 0, 1, 0.01)}
+          {sliderRow('금속성', config.metalness)}
+          {slider('metalness', 0, 1, 0.01)}
+          {sliderRow('클리어코트', config.clearcoat)}
+          {slider('clearcoat', 0, 1, 0.01)}
+          {sliderRow('발광', config.emissiveIntensity)}
+          {slider('emissiveIntensity', 0, 2, 0.01)}
+          {sliderRow('투명/유리', config.transmission)}
+          {slider('transmission', 0, 1, 0.01)}
+
+          {/* 색상 */}
+          <div style={sectionTitle}>색상</div>
+          <input
+            type="color" value={config.color}
+            onChange={(e) => apply({ color: e.target.value })}
+            style={{ width: '100%', height: 28, border: '1px solid #e2e8f0', borderRadius: 6, cursor: 'pointer', padding: 0 }}
+          />
+
+          {/* 적용 범위 */}
+          <div style={sectionTitle}>적용 범위</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {chip(!partSelect, () => { onClearSelection(); if (partSelect) onTogglePartSelect() }, '전체', 'scope-all')}
+            {chip(partSelect, () => onTogglePartSelect(), '파트 선택', 'scope-part')}
+          </div>
+          {partSelect && (
+            <div style={{ fontSize: 11, color: selectedMesh ? '#6d28d9' : '#94a3b8' }}>
+              {selectedMesh
+                ? `선택됨: ${selectedMesh.name || '(이름 없는 파트)'}`
+                : '모델에서 파트를 클릭하세요'}
+            </div>
+          )}
+
+          {/* 원본 복원 */}
+          <button
+            onClick={handleRestore}
+            style={{
+              marginTop: 2, padding: '5px 8px', borderRadius: 6, border: '1px solid #e2e8f0',
+              cursor: 'pointer', fontSize: 12, background: '#fff', color: '#475569', fontWeight: 600,
+            }}
+          >↺ 원본 복원</button>
         </div>
       )}
     </div>
@@ -733,6 +834,9 @@ export default function AssetViewer360({
   const [capturing, setCapturing]   = useState(false)
   const [lightMove, setLightMove]   = useState(false)  // 조명 이동 모드 on/off
   const [lightAngle, setLightAngle] = useState({ az: 0.7, el: 0.9 })  // 방위각/고도각(라디안)
+  const [labConfig, setLabConfig]   = useState({ ...DEFAULT_CONFIG })  // 실험실 재질 config
+  const [partSelect, setPartSelect] = useState(false)  // 파트 선택 모드 on/off
+  const [selectedMesh, setSelectedMesh] = useState(null)  // 선택된 파트(THREE.Mesh|null)
   const controlsRef = useRef()
   const dragRef = useRef(null)  // 드래그 시작점 { x, y, az, el }
 
@@ -785,6 +889,19 @@ export default function AssetViewer360({
     dragRef.current = null
   }
 
+  // 파트 선택: partSelect 모드일 때만 모델 클릭으로 클릭된 메시를 선택.
+  // R3F onClick 은 이벤트 핸들러라 setState 안전. stopPropagation 으로 하위 전파 차단.
+  function handleModelClick(e) {
+    try {
+      if (!partSelect) return
+      e.stopPropagation?.()
+      const mesh = e.object && e.object.isMesh ? e.object : null
+      setSelectedMesh(mesh)
+    } catch (err) {
+      console.warn('[파트선택] 클릭 처리 실패:', err)
+    }
+  }
+
   if (!SUPPORTED.includes(ext) || !modelUrl) {
     return <ViewerFallback thumbnailUrl={thumbnailUrl} modelUrl={modelUrl} />
   }
@@ -819,14 +936,17 @@ export default function AssetViewer360({
 
           <Suspense fallback={<Loader />}>
             <Center>
-              <ModelLoader
-                url={modelUrl}
-                extension={ext}
-                textureUrls={textureUrls}
-                wireframe={wireframe}
-                onLoaded={handleLoaded}
-                onLightsDetected={setEmbeddedLights}
-              />
+              {/* 파트 선택 모드일 때만 모델 클릭을 파트 선택으로 처리. */}
+              <group onClick={partSelect ? handleModelClick : undefined}>
+                <ModelLoader
+                  url={modelUrl}
+                  extension={ext}
+                  textureUrls={textureUrls}
+                  wireframe={wireframe}
+                  onLoaded={handleLoaded}
+                  onLightsDetected={setEmbeddedLights}
+                />
+              </group>
             </Center>
           </Suspense>
 
@@ -887,7 +1007,12 @@ export default function AssetViewer360({
 
       {/* 조명 이동 토글 버튼 — LightingPicker(좌하단 bottom 12) 바로 위. zIndex 10 로 오버레이보다 위. */}
       <button
-        onClick={() => setLightMove(v => !v)}
+        onClick={() => setLightMove(v => {
+          const next = !v
+          // 조명 이동을 켜면 파트 선택을 끈다(상호 배타, 클릭 충돌 방지).
+          if (next) setPartSelect(false)
+          return next
+        })}
         title="조명 이동 모드 — 드래그로 광원 이동"
         style={{
           position: 'absolute', bottom: 52, left: 12, zIndex: 10,
@@ -899,7 +1024,23 @@ export default function AssetViewer360({
         }}
       >🔦 조명 이동{lightMove ? ' ON' : ''}</button>
 
-      {loadedObj && <MaterialPicker root={loadedObj} textureUrls={textureUrls} />}
+      {loadedObj && (
+        <MaterialLab
+          root={loadedObj}
+          config={labConfig}
+          onConfigChange={setLabConfig}
+          partSelect={partSelect}
+          onTogglePartSelect={() => setPartSelect(v => {
+            const next = !v
+            // 파트 선택과 조명 이동은 상호 배타 — 조명 오버레이(zIndex 5)가 파트 클릭을
+            // 삼키지 않도록 파트 선택을 켜면 조명 이동을 끈다.
+            if (next) setLightMove(false)
+            return next
+          })}
+          selectedMesh={selectedMesh}
+          onClearSelection={() => setSelectedMesh(null)}
+        />
+      )}
 
       {embeddedLights && (
         <div style={{
