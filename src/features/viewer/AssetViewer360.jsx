@@ -658,6 +658,39 @@ function MaterialPicker({ root, textureUrls = [] }) {
   )
 }
 
+// 마우스로 끌어 이동하는 인터랙티브 키라이트.
+// 낮/밤/스튜디오 프리셋 위에 얹히는 추가 광원이라 어느 조명에서도 하이라이트/그림자 각도 변화가 보인다.
+// angle: { az(방위각), el(고도각) } 라디안. 원점(0,0,0)을 향하는 구면좌표로 배치.
+function MovableKeyLight({ angle, active }) {
+  if (!active) return null
+
+  let position = [6, 5, 5]
+  try {
+    const r = 8
+    const az = angle?.az ?? 0
+    const el = angle?.el ?? 0
+    position = [
+      r * Math.cos(el) * Math.sin(az),
+      r * Math.sin(el),
+      r * Math.cos(el) * Math.cos(az),
+    ]
+  } catch (e) {
+    console.warn('[MovableKeyLight] 각도 계산 실패, 기본 위치 사용:', e)
+  }
+
+  return (
+    <>
+      {/* 강한 키라이트 — 기본 target 이 원점(0,0,0)이라 그대로 모델을 비춘다. */}
+      <directionalLight position={position} intensity={1.8} color={0xfff4e6} castShadow />
+      {/* 광원 위치 시각화용 작은 발광 구 — "빛이 여기 있다"를 보여준다. */}
+      <mesh position={position}>
+        <sphereGeometry args={[0.25, 16, 16]} />
+        <meshBasicMaterial color={0xfff4e6} />
+      </mesh>
+    </>
+  )
+}
+
 function ViewerFallback({ thumbnailUrl, modelUrl, message = '미리보기를 불러올 수 없습니다' }) {
   return (
     <div style={{ width: '100%', height: '100%', background: '#f1f5f9', borderRadius: 12,
@@ -698,7 +731,10 @@ export default function AssetViewer360({
   const [modelCenter, setModelCenter] = useState(null)
   const [embeddedLights, setEmbeddedLights] = useState(false)
   const [capturing, setCapturing]   = useState(false)
+  const [lightMove, setLightMove]   = useState(false)  // 조명 이동 모드 on/off
+  const [lightAngle, setLightAngle] = useState({ az: 0.7, el: 0.9 })  // 방위각/고도각(라디안)
   const controlsRef = useRef()
+  const dragRef = useRef(null)  // 드래그 시작점 { x, y, az, el }
 
   const ext = fileExtension?.toLowerCase()
 
@@ -718,6 +754,35 @@ export default function AssetViewer360({
     a.download = 'preview-360.webm'
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  // 조명 드래그 핸들러 — 모두 이벤트 핸들러 안에서 setState 하므로 lint OK.
+  // el 은 모델 아래로 너무 안 내려가게 [-1.3, 1.4] 라디안으로 clamp.
+  const EL_MIN = -1.3, EL_MAX = 1.4
+  function handleLightPointerDown(e) {
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+      dragRef.current = { x: e.clientX, y: e.clientY, az: lightAngle.az, el: lightAngle.el }
+    } catch (err) {
+      console.warn('[조명이동] pointerDown 실패:', err)
+    }
+  }
+  function handleLightPointerMove(e) {
+    try {
+      const start = dragRef.current
+      if (!start || e.buttons === 0) return
+      const dx = e.clientX - start.x
+      const dy = e.clientY - start.y
+      const az = start.az + dx * 0.01
+      let el = start.el - dy * 0.01
+      el = Math.max(EL_MIN, Math.min(EL_MAX, el))
+      setLightAngle({ az, el })
+    } catch (err) {
+      console.warn('[조명이동] pointerMove 실패:', err)
+    }
+  }
+  function handleLightPointerUp() {
+    dragRef.current = null
   }
 
   if (!SUPPORTED.includes(ext) || !modelUrl) {
@@ -743,6 +808,9 @@ export default function AssetViewer360({
         >
           {/* GLB 내장 조명이 없는 경우에만 프리셋 조명 리그 추가 */}
           {!embeddedLights && <LightingRig preset={lighting} />}
+
+          {/* 마우스로 끌어 이동하는 인터랙티브 키라이트(조명 이동 모드일 때만) */}
+          <MovableKeyLight angle={lightAngle} active={lightMove} />
 
           {/* 환경맵: HDR이 있으면 직접 로드, 없으면 RoomEnvironment 를 반사용으로 사용 */}
           {hdrUrl
@@ -772,6 +840,7 @@ export default function AssetViewer360({
           <OrbitControls
             ref={controlsRef}
             makeDefault
+            enabled={!lightMove}
             autoRotate={autoRotate && !capturing}
             autoRotateSpeed={1.5}
             enablePan={false}
@@ -780,6 +849,26 @@ export default function AssetViewer360({
           />
         </Canvas>
       </ErrorBoundary>
+
+      {/* 조명 이동 드래그 오버레이 — 뷰어 전체를 덮되 피커/컨트롤(zIndex 10)보다는 아래(zIndex 5). */}
+      {lightMove && (
+        <div
+          onPointerDown={handleLightPointerDown}
+          onPointerMove={handleLightPointerMove}
+          onPointerUp={handleLightPointerUp}
+          onPointerLeave={handleLightPointerUp}
+          style={{
+            position: 'absolute', inset: 0, zIndex: 5,
+            cursor: 'move', touchAction: 'none', borderRadius: 12,
+          }}
+        >
+          <div style={{
+            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(109,40,217,0.85)', color: '#fff', fontSize: 12, fontWeight: 600,
+            padding: '4px 12px', borderRadius: 99, pointerEvents: 'none',
+          }}>🔦 드래그해서 조명 이동</div>
+        </div>
+      )}
 
       <ViewerControls
         autoRotate={autoRotate}
@@ -795,6 +884,20 @@ export default function AssetViewer360({
       />
 
       <LightingPicker value={lighting} onChange={setLighting} />
+
+      {/* 조명 이동 토글 버튼 — LightingPicker(좌하단 bottom 12) 바로 위. zIndex 10 로 오버레이보다 위. */}
+      <button
+        onClick={() => setLightMove(v => !v)}
+        title="조명 이동 모드 — 드래그로 광원 이동"
+        style={{
+          position: 'absolute', bottom: 52, left: 12, zIndex: 10,
+          padding: '4px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+          fontSize: 13, fontWeight: 600,
+          background: lightMove ? '#6d28d9' : 'rgba(255,255,255,0.92)',
+          color: lightMove ? '#fff' : '#6d28d9',
+          backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+        }}
+      >🔦 조명 이동{lightMove ? ' ON' : ''}</button>
 
       {loadedObj && <MaterialPicker root={loadedObj} textureUrls={textureUrls} />}
 
