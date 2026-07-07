@@ -46,6 +46,9 @@ export default function AssetDetailPage() {
   const [error, setError] = useState('')
   const [downloadingId, setDownloadingId] = useState(null)
   const [authorName, setAuthorName] = useState('')
+  const [liked, setLiked] = useState(false)
+  const [likeCount, setLikeCount] = useState(0)
+  const [liking, setLiking] = useState(false)
 
   // 백엔드 post DTO가 작성자 닉네임을 안 주므로 authorId로 이름을 해석 (캐시됨)
   useEffect(() => {
@@ -64,6 +67,8 @@ export default function AssetDetailPage() {
         const data = await postApi.getDetail(id)
         if (!alive) return
         setPost(data)
+        setLiked(!!data.liked)
+        setLikeCount(data.likeCount ?? 0)
         setModel(fileApi.resolveModelFromViewer(data.viewer) ?? await fileApi.resolveModelFromFiles(data.files ?? []))
       } catch (e) {
         if (alive) setError(e.message)
@@ -83,6 +88,22 @@ export default function AssetDetailPage() {
       navigate('/assets')
     } catch (e) {
       setError(e.message)
+    }
+  }
+
+  // 좋아요 토글: 서버가 반영 후 { likeCount, liked } 를 돌려준다.
+  async function handleLike() {
+    if (!user) { navigate('/login'); return } // 좋아요는 로그인 필요
+    if (liking) return
+    setLiking(true)
+    try {
+      const res = await postApi.toggleLike(id)
+      setLiked(res.liked)
+      setLikeCount(res.likeCount)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLiking(false)
     }
   }
 
@@ -159,12 +180,12 @@ export default function AssetDetailPage() {
               </div>
             )}
 
-            {/* ❤️ 좋아요 — 백엔드 like API 생기면 주석 해제
+            {/* ❤️ 좋아요 */}
             <div className="mt-5 pt-5 border-t border-linen-200">
-              <Button variant={liked ? 'primary' : 'secondary'} onClick={handleLike}>
-                ♥ 좋아요 {post.likeCount ?? 0}
+              <Button variant={liked ? 'primary' : 'secondary'} onClick={handleLike} disabled={liking}>
+                ♥ 좋아요 {likeCount}
               </Button>
-            </div> */}
+            </div>
           </div>
 
           {/* 💬 댓글 — 백엔드 CommentController 구현되면 주석 해제
@@ -182,7 +203,7 @@ export default function AssetDetailPage() {
             <h2 className="font-semibold text-slate-800 text-sm mb-3">에셋 정보</h2>
             <dl className="grid grid-cols-2 gap-y-2 text-sm">
               <dt className="text-slate-400">좋아요</dt>
-              <dd className="text-slate-700 text-right">{post.likeCount ?? 0}</dd>
+              <dd className="text-slate-700 text-right">{likeCount}</dd>
               <dt className="text-slate-400">조회수</dt>
               <dd className="text-slate-700 text-right">{post.viewCount ?? 0}</dd>
               {/* 백엔드가 DTO에 노출하면 자동 표시됨 (폴리곤/용량 등) */}
