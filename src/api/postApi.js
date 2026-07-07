@@ -23,4 +23,10 @@ export const postApi = {
     return requestMultipart('/posts', fd)
   },
   remove: (id) => request(`/posts/${id}`, { method: 'DELETE' }),
+  // 게시글 메타데이터 수정 (제목/설명/카테고리/태그) — 백엔드 PUT /posts/{id}
+  update: (id, { title, content, categoryId, tags }) =>
+    request(`/posts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ title, content, categoryId, tags: tags ?? [] }),
+    }),
 }

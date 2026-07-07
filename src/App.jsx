@@ -14,6 +14,7 @@ import CreateRequestPage from './pages/CreateRequestPage'
 import AssetBoardPage from './pages/AssetBoardPage'
 import AssetDetailPage from './pages/AssetDetailPage'
 import CreateAssetPage from './pages/CreateAssetPage'
+import EditAssetPage from './pages/EditAssetPage'
 import ProfilePage from './pages/ProfilePage'
 import PortfolioPage from './pages/PortfolioPage'
 import DirectoryPage from './pages/DirectoryPage'
@@ -37,7 +38,8 @@ export default function App() {
             {/* 에셋 게시판 */}
             <Route path="/assets"     element={<ProtectedRoute><AssetBoardPage /></ProtectedRoute>} />
             <Route path="/assets/new" element={<ProtectedRoute><CreateAssetPage /></ProtectedRoute>} />
-            <Route path="/assets/:id" element={<ProtectedRoute><AssetDetailPage /></ProtectedRoute>} />
+            <Route path="/assets/:id"      element={<ProtectedRoute><AssetDetailPage /></ProtectedRoute>} />
+            <Route path="/assets/:id/edit" element={<ProtectedRoute><EditAssetPage /></ProtectedRoute>} />
 
             {/* 메시지 */}
             <Route path="/inbox"               element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
