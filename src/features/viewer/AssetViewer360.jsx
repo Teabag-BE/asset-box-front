@@ -170,8 +170,9 @@ function DefaultEnvironment() {
 const LIGHTING_PRESETS = {
   // studio: 지금과 동일한 느낌. exposure 1.0, 배경은 기존 유지(건드리지 않음).
   studio: { exposure: 1.0, background: null, useRoomEnv: true },
-  // day: 밝고 따뜻. exposure 1.25, 밝은 하늘빛 배경. RoomEnvironment 반사 유지.
-  day: { exposure: 1.25, background: 0xeaf2fb, useRoomEnv: true },
+  // day: 실제 HDR(/hdr/day.hdr)이 배경+환경맵을 담당. background=null 로 두어 LightingRig 가
+  //      배경을 덮어쓰지 않게 하고(HDR 소유), 노출만 조정 + 소프트 태양광만 얹는다.
+  day: { exposure: 1.0, background: null, useRoomEnv: false },
   // night: 어둡고 차가움. exposure 0.6, 어두운 남색 배경. 반사 환경은 유지(실루엣 방지).
   night: { exposure: 0.6, background: 0x0b1220, useRoomEnv: true },
 }
@@ -209,12 +210,11 @@ function LightingRig({ preset = 'studio' }) {
   }, [gl, scene, config.exposure, config.background])
 
   if (preset === 'day') {
-    // 밝고 따뜻한 태양 + 부드러운 하늘/땅 fill.
+    // 환경 조명은 실제 HDR(/hdr/day.hdr)이 제공하므로, 여기선 직접광을 최소화한다.
+    // 부드러운 태양 하이라이트만 살짝 얹어 형태감을 살린다(과노출 방지).
     return (
       <>
-        <hemisphereLight args={[0xbfd8ff, 0xffe6c0, 0.6]} />
-        <directionalLight position={[8, 14, 6]} intensity={1.5} color={0xfff2e0} castShadow />
-        <directionalLight position={[-6, 6, -4]} intensity={0.35} color={0xffffff} />
+        <directionalLight position={[8, 14, 6]} intensity={0.55} color={0xfff2e0} castShadow />
       </>
     )
   }
@@ -1159,10 +1159,14 @@ export default function AssetViewer360({
           {/* 마우스로 끌어 이동하는 인터랙티브 키라이트(조명 이동 모드일 때만) */}
           <MovableKeyLight angle={lightAngle} active={lightMove} />
 
-          {/* 환경맵: HDR이 있으면 직접 로드, 없으면 RoomEnvironment 를 반사용으로 사용 */}
+          {/* 환경맵 우선순위: 에셋 업로드 HDR > '낮' 프리셋 HDR(실제 하늘) > RoomEnvironment.
+              '낮'을 고르면 번들된 실사 HDR(/hdr/day.hdr)이 배경+반사를 담당해 사진처럼 보인다.
+              (6MB라 낮 선택 시에만 로드) '밤'/'스튜디오'는 RoomEnvironment + LightingRig 배경. */}
           {hdrUrl
             ? <HdrEnvironment url={hdrUrl} extension={hdrExtension} />
-            : <DefaultEnvironment />}
+            : lighting === 'day'
+              ? <HdrEnvironment url="/hdr/day.hdr" extension="hdr" />
+              : <DefaultEnvironment />}
 
           <Suspense fallback={<Loader />}>
             <Center>
