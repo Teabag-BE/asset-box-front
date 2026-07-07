@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { messageApi } from '../api/messageApi'
+import { resolveUserName } from '../utils/userNames'
 import Spinner from '../components/Spinner'
 import Avatar from '../components/Avatar'
 
@@ -27,7 +28,18 @@ export default function ConversationPage() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [partner, setPartner] = useState({ id: null, name: '' })
   const bottomRef = useRef(null)
+
+  // 상대 표시 이름 해석 (없으면 "유저 #번호" 폴백)
+  useEffect(() => {
+    let active = true
+    resolveUserName(partnerId).then(name => { if (active) setPartner({ id: partnerId, name }) })
+    return () => { active = false }
+  }, [partnerId])
+
+  // 아직 못 받았거나 다른 대화의 이름이면 번호로 폴백
+  const partnerLabel = (String(partner.id) === String(partnerId) && partner.name) || `유저 #${partnerId}`
 
   // 1:1 대화에서 "내 메시지"는 보낸 사람이 상대가 아닌 것 (내 userId 없이 판정)
   const isMine = (msg) => String(msg.senderId) !== String(partnerId)
@@ -77,8 +89,8 @@ export default function ConversationPage() {
     <div className="max-w-2xl mx-auto px-4 py-4 flex flex-col" style={{ height: 'calc(100vh - 56px)' }}>
       <div className="flex items-center gap-3 pb-3 border-b border-linen-200 mb-3">
         <Link to="/inbox" className="text-slate-400 hover:text-slate-600 text-lg">←</Link>
-        <Avatar nickname={`#${partnerId}`} size="md" />
-        <Link to={`/portfolio/${partnerId}`} className="font-semibold text-slate-800 text-sm hover:text-[#556350]">유저 #{partnerId}</Link>
+        <Avatar nickname={partnerLabel} size="md" />
+        <Link to={`/portfolio/${partnerId}`} className="font-semibold text-slate-800 text-sm hover:text-[#556350]">{partnerLabel}</Link>
       </div>
 
       {error && <p className="text-crimson-600 text-sm mb-2">{error}</p>}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { messageApi } from '../api/messageApi'
+import { resolveUserName } from '../utils/userNames'
 import Spinner from '../components/Spinner'
 import Avatar from '../components/Avatar'
 import Button from '../components/Button'
@@ -10,6 +11,7 @@ import { timeAgo } from '../utils/timeAgo'
 export default function InboxPage() {
   const navigate = useNavigate()
   const [conversations, setConversations] = useState([])
+  const [names, setNames] = useState({}) // partnerId -> 표시 이름
   const [loading, setLoading] = useState(true)
   const [newId, setNewId] = useState('')
 
@@ -18,7 +20,14 @@ export default function InboxPage() {
     let active = true
     const load = () =>
       messageApi.getInbox()
-        .then(list => { if (active) setConversations(list) })
+        .then(list => {
+          if (!active) return
+          setConversations(list)
+          // 상대 표시 이름 해석 ("유저 #번호" 대신)
+          Promise.all(
+            list.map(c => resolveUserName(c.partnerId).then(n => [c.partnerId, n])),
+          ).then(entries => { if (active) setNames(Object.fromEntries(entries)) })
+        })
         .catch(() => {})
         .finally(() => { if (active) setLoading(false) })
     load()
@@ -60,10 +69,10 @@ export default function InboxPage() {
                 to={`/messages/${conv.partnerId}`}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-linen-50 transition-colors"
               >
-                <Avatar nickname={`#${conv.partnerId}`} size="md" />
+                <Avatar nickname={names[conv.partnerId] || `#${conv.partnerId}`} size="md" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-sm text-slate-800">유저 #{conv.partnerId}</span>
+                    <span className="font-semibold text-sm text-slate-800">{names[conv.partnerId] || `유저 #${conv.partnerId}`}</span>
                     <span className="text-xs text-slate-400 shrink-0">{timeAgo(conv.lastMessageAt)}</span>
                   </div>
                   <p className="text-xs text-slate-500 truncate mt-0.5">{conv.lastMessage}</p>
