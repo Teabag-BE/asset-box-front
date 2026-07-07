@@ -65,21 +65,35 @@ const ROLE_PATTERNS = [
 export function classifyTextures(textureUrls = []) {
   const result = {}
   try {
+    const entries = []
     for (const entry of textureUrls) {
       if (!entry) continue
       const url = typeof entry === 'string' ? entry : (entry.url || entry.accessUrl)
       if (!url) continue
-      const nameForMatch = typeof entry === 'string'
+      const name = typeof entry === 'string'
         ? basenameOf(url)
         : basenameOf(entry.originalName || url)
-      if (!nameForMatch) continue
+      if (!name) continue
+      entries.push({ url, name })
+    }
 
+    // 1) 이름 패턴으로 역할 매칭.
+    for (const { url, name } of entries) {
       for (const [role, pattern] of ROLE_PATTERNS) {
         // 먼저 감지된 것을 우선(같은 역할 여러 개면 첫 번째 유지).
-        if (!result[role] && pattern.test(nameForMatch)) {
+        if (!result[role] && pattern.test(name)) {
           result[role] = url
         }
       }
+    }
+
+    // 2) albedo 미검출 폴백: normal/rough/metal/ao/emissive 로도 "안 잡힌" 텍스처가 있으면
+    //    그걸 색맵(albedo)으로 간주한다. 키워드 없는 텍스처(예: bunny 의 'Mafioso_Clothing_Text.png')를 살린다.
+    //    — 단색/색맵 텍스처가 특이한 이름으로 하나만 든 경우가 흔하고, 그게 곧 색맵일 확률이 절대적.
+    if (!result.albedo) {
+      const claimed = new Set([result.normal, result.roughness, result.metalness, result.ao, result.emissive].filter(Boolean))
+      const leftover = entries.find(e => !claimed.has(e.url))
+      if (leftover) result.albedo = leftover.url
     }
   } catch {
     // 분류 실패는 조용히 무시 — 빈 결과 반환.
