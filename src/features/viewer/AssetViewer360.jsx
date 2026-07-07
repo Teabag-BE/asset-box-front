@@ -12,6 +12,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import * as THREE from 'three'
 import {
   autoFixMaterials,
+  neutralizeEmptyMaterials,
   classifyTextures,
   hasAnyDetectedTexture,
   applyPreset,
@@ -159,6 +160,86 @@ function DefaultEnvironment() {
   return null
 }
 
+// 낮/밤/스튜디오 조명 프리셋.
+//   - toneMappingExposure(gl) 와 scene.background 는 useEffect 로 직접 설정하고
+//     cleanup 에서 원복한다(setState 아님 → lint OK).
+//   - preset 별 라이트는 JSX 로 return. RoomEnvironment(반사용)는 studio/day 에서 별도로 유지.
+// preset: 'studio' | 'day' | 'night'
+const LIGHTING_PRESETS = {
+  // studio: 지금과 동일한 느낌. exposure 1.0, 배경은 기존 유지(건드리지 않음).
+  studio: { exposure: 1.0, background: null, useRoomEnv: true },
+  // day: 밝고 따뜻. exposure 1.25, 밝은 하늘빛 배경. RoomEnvironment 반사 유지.
+  day: { exposure: 1.25, background: 0xeaf2fb, useRoomEnv: true },
+  // night: 어둡고 차가움. exposure 0.6, 어두운 남색 배경. 반사 환경은 유지(실루엣 방지).
+  night: { exposure: 0.6, background: 0x0b1220, useRoomEnv: true },
+}
+
+function LightingRig({ preset = 'studio' }) {
+  const { gl, scene } = useThree()
+  const config = LIGHTING_PRESETS[preset] || LIGHTING_PRESETS.studio
+
+  useEffect(() => {
+    let prevExposure = 1.0
+    let prevBackground = null
+    try {
+      prevExposure = gl.toneMappingExposure
+      prevBackground = scene.background
+      gl.toneMappingExposure = config.exposure
+      // background 가 지정된 프리셋만 배경을 덮어쓴다. studio(null)는 기존 배경 유지.
+      if (config.background !== null && config.background !== undefined) {
+        scene.background = new THREE.Color(config.background)
+      }
+    } catch (e) {
+      console.warn('[LightingRig] 조명 프리셋 적용 실패, 원래 상태 유지:', e)
+    }
+
+    return () => {
+      try {
+        gl.toneMappingExposure = prevExposure
+        // 우리가 배경을 덮어썼던 경우에만 원복(다른 프리셋/HDR 배경을 훼손하지 않도록).
+        if (config.background !== null && config.background !== undefined) {
+          scene.background = prevBackground
+        }
+      } catch {
+        // 원복 실패는 무시.
+      }
+    }
+  }, [gl, scene, config.exposure, config.background])
+
+  if (preset === 'day') {
+    // 밝고 따뜻한 태양 + 부드러운 하늘/땅 fill.
+    return (
+      <>
+        <hemisphereLight args={[0xbfd8ff, 0xffe6c0, 0.6]} />
+        <directionalLight position={[8, 14, 6]} intensity={1.5} color={0xfff2e0} castShadow />
+        <directionalLight position={[-6, 6, -4]} intensity={0.35} color={0xffffff} />
+      </>
+    )
+  }
+
+  if (preset === 'night') {
+    // 어둡고 차가움. 낮은 cool ambient + 차가운 키/rim + 약한 warm point 로 온기.
+    // 모델이 실루엣으로 죽지 않게 최소 가시성 확보.
+    return (
+      <>
+        <ambientLight intensity={0.3} color={0x223044} />
+        <directionalLight position={[5, 9, 4]} intensity={0.8} color={0x9db8ff} castShadow />
+        <directionalLight position={[-6, 4, -5]} intensity={0.5} color={0x6f86c9} />
+        <pointLight position={[2, 3, 3]} intensity={0.5} distance={20} decay={2} color={0xffb27a} />
+      </>
+    )
+  }
+
+  // studio(기본): 기존 하드코딩 조명과 동일.
+  return (
+    <>
+      <ambientLight intensity={0.8} />
+      <directionalLight position={[5, 10, 5]} intensity={1} castShadow />
+      <directionalLight position={[-5, 5, -5]} intensity={0.3} />
+    </>
+  )
+}
+
 function HdrEnvironment({ url, extension }) {
   const { scene, gl } = useThree()
 
@@ -293,6 +374,9 @@ function GltfModel({ url, wireframe, onLoaded, onLightsDetected }) {
   useEffect(() => {
     if (!scene) return
     normalizeModelObject(scene)
+    // GLB 보수적 폴백: 색·텍스처·버텍스컬러·emissive 가 전부 없어 검게 뜰 머티리얼만
+    // 중립 클레이로 구제. authored 머티리얼은 절대 건드리지 않는다. 예외 시 원본 유지.
+    try { neutralizeEmptyMaterials(scene) } catch (e) { console.warn('[GltfModel] neutralizeEmptyMaterials 실패, 원본 유지:', e) }
     applyWireframe(scene, wireframe)
     onLightsDetected?.(hasEmbeddedLights(scene))
     onLoaded?.(scene)
@@ -473,6 +557,40 @@ function ViewerControls({ autoRotate, wireframe, capturing, onToggleRotate, onTo
   )
 }
 
+// 조명 프리셋 셀렉터 — 좌하단. MaterialPicker(우상단)·ViewerControls(우하단)와 안 겹침.
+const LIGHTING_OPTIONS = [
+  { id: 'studio', label: '💡', title: '스튜디오 조명' },
+  { id: 'day',    label: '☀️', title: '낮 조명' },
+  { id: 'night',  label: '🌙', title: '밤 조명' },
+]
+
+function LightingPicker({ value, onChange }) {
+  return (
+    <div style={{
+      position: 'absolute', bottom: 12, left: 12,
+      display: 'flex', gap: 2, background: 'rgba(255,255,255,0.92)',
+      backdropFilter: 'blur(4px)', borderRadius: 10, padding: 4,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.12)', zIndex: 10,
+    }}>
+      {LIGHTING_OPTIONS.map(opt => {
+        const active = value === opt.id
+        return (
+          <button
+            key={opt.id}
+            onClick={() => onChange(opt.id)}
+            title={opt.title}
+            style={{
+              padding: '4px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 14,
+              background: active ? '#ede9fe' : 'transparent',
+              color: active ? '#6d28d9' : '#475569',
+            }}
+          >{opt.label}</button>
+        )
+      })}
+    </div>
+  )
+}
+
 // C. 머티리얼 피커 — 로드된 root 의 모든 mesh material 을 프리셋으로 즉시 교체.
 // three 객체를 직접 수정하고, 리렌더가 필요하면 상태 토글(tick)로만 갱신한다.
 function MaterialPicker({ root, textureUrls = [] }) {
@@ -575,6 +693,7 @@ export default function AssetViewer360({
 }) {
   const [autoRotate, setAutoRotate] = useState(initRotate)
   const [wireframe, setWireframe]   = useState(false)
+  const [lighting, setLighting]     = useState('studio')  // 'studio' | 'day' | 'night'
   const [loadedObj, setLoadedObj]   = useState(null)
   const [modelCenter, setModelCenter] = useState(null)
   const [embeddedLights, setEmbeddedLights] = useState(false)
@@ -622,16 +741,10 @@ export default function AssetViewer360({
           camera={{ position: [5, 3, 5], fov: 50 }}
           style={{ borderRadius: 12, width: '100%', height: '100%' }}
         >
-          {/* GLB 내장 조명이 없는 경우에만 기본 조명 추가 */}
-          {!embeddedLights && (
-            <>
-              <ambientLight intensity={0.8} />
-              <directionalLight position={[5, 10, 5]} intensity={1} castShadow />
-              <directionalLight position={[-5, 5, -5]} intensity={0.3} />
-            </>
-          )}
+          {/* GLB 내장 조명이 없는 경우에만 프리셋 조명 리그 추가 */}
+          {!embeddedLights && <LightingRig preset={lighting} />}
 
-          {/* 환경맵: HDR이 있으면 직접 로드, 없으면 기본 조명만 사용 */}
+          {/* 환경맵: HDR이 있으면 직접 로드, 없으면 RoomEnvironment 를 반사용으로 사용 */}
           {hdrUrl
             ? <HdrEnvironment url={hdrUrl} extension={hdrExtension} />
             : <DefaultEnvironment />}
@@ -680,6 +793,8 @@ export default function AssetViewer360({
           else { setAutoRotate(false); setCapturing(true) }
         }}
       />
+
+      <LightingPicker value={lighting} onChange={setLighting} />
 
       {loadedObj && <MaterialPicker root={loadedObj} textureUrls={textureUrls} />}
 
