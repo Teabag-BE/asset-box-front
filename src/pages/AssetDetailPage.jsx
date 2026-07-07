@@ -23,6 +23,18 @@ function formatBytes(bytes) {
   return `${size.toFixed(unit === 0 ? 0 : 1)}${units[unit]}`
 }
 
+// S3 presigned URL로 실제 다운로드를 트리거한다. 백엔드가 Content-Disposition(원본 파일명)을
+// 붙여주므로 파일이 S3 key(UUID)가 아니라 원래 이름으로 저장된다.
+// (cross-origin URL이라 a.download 속성은 브라우저가 무시하고 서버 헤더를 따른다)
+function triggerBrowserDownload(url) {
+  const a = document.createElement('a')
+  a.href = url
+  a.rel = 'noreferrer'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
 export default function AssetDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -31,6 +43,7 @@ export default function AssetDetailPage() {
   const [model, setModel] = useState(null)   // { url, ext } | null
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [downloadingId, setDownloadingId] = useState(null)
 
   useEffect(() => {
     let alive = true
@@ -69,6 +82,21 @@ export default function AssetDetailPage() {
   const isMine = user && String(user.id) === String(post.authorId)
   const author = post.authorNickname || `#${post.authorId}`
   const assetFiles = post.files ?? []
+
+  // 다운로드 버튼: 미리보기용 accessUrl을 직접 열면 파일명이 S3 key(UUID)로 저장되므로,
+  // 원본 파일명이 붙은 전용 다운로드 URL(/files/download/presigned-url)을 받아서 내려받는다.
+  async function handleDownload(file) {
+    const fileId = file.fileId ?? file.id
+    try {
+      setDownloadingId(fileId)
+      const url = fileId ? await fileApi.getDownloadUrl(fileId) : file.accessUrl
+      if (url) triggerBrowserDownload(url)
+    } catch {
+      if (file.accessUrl) triggerBrowserDownload(file.accessUrl) // 실패 시 폴백(이름은 UUID일 수 있음)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -184,19 +212,24 @@ export default function AssetDetailPage() {
             <div className="bg-white border border-[#C9CAAC]/40 rounded-2xl p-5">
               <h2 className="font-semibold text-slate-800 text-sm mb-3">📦 다운로드 파일</h2>
               <div className="space-y-2">
-                {assetFiles.map(file => (
-                  <a key={file.fileId ?? file.id}
-                    href={file.accessUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center justify-between gap-3 rounded-lg border border-linen-200 px-3 py-2 text-sm hover:border-[#869B7E]/50 hover:bg-linen-50">
+                {assetFiles.map(file => {
+                  const fid = file.fileId ?? file.id
+                  return (
+                  <button key={fid}
+                    type="button"
+                    onClick={() => handleDownload(file)}
+                    disabled={downloadingId === fid}
+                    className="w-full text-left flex items-center justify-between gap-3 rounded-lg border border-linen-200 px-3 py-2 text-sm hover:border-[#869B7E]/50 hover:bg-linen-50 disabled:opacity-60">
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-slate-700">{file.originalName}</span>
                       <span className="text-xs uppercase text-slate-400">{file.fileType ?? file.extension}</span>
                     </span>
-                    <span className="shrink-0 text-xs text-slate-400">{formatBytes(file.sizeBytes)}</span>
-                  </a>
-                ))}
+                    <span className="shrink-0 text-xs text-slate-400">
+                      {downloadingId === fid ? '준비 중…' : formatBytes(file.sizeBytes)}
+                    </span>
+                  </button>
+                  )
+                })}
               </div>
             </div>
           )}
