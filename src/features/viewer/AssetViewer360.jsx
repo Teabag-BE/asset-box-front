@@ -796,6 +796,49 @@ function MovableKeyLight({ angle, active }) {
   )
 }
 
+// 썸네일 캡처 헬퍼 — Canvas 내부에서 useThree 로 gl 에 접근해 capture() 함수를 부모에 등록만 한다.
+// setState 가 아니라 콜백 등록(부모가 넘긴 registerCapture 를 effect 에서 호출)이라 set-state-in-effect 위반 아님.
+// capture(): 현재 프레임을 한 번 렌더한 뒤 canvas.toBlob 으로 PNG Blob 을 Promise 로 반환. 실패 시 null.
+// registerCapture 가 없으면(상세페이지 등) 아무 것도 하지 않아 기존 뷰어 동작에 영향 없음.
+function CaptureHelper({ registerCapture }) {
+  const { gl, scene, camera } = useThree()
+
+  useEffect(() => {
+    if (typeof registerCapture !== 'function') return
+
+    const capture = () => new Promise((resolve) => {
+      try {
+        // 캡처 직전 현재 상태로 한 번 강제 렌더(preserveDrawingBuffer 여도 최신 프레임 보장).
+        gl.render(scene, camera)
+        const canvas = gl.domElement
+        if (canvas.toBlob) {
+          canvas.toBlob((blob) => resolve(blob || null), 'image/png')
+        } else {
+          // toBlob 미지원 폴백 — dataURL → Blob 변환.
+          try {
+            const dataUrl = canvas.toDataURL('image/png')
+            const binary = atob(dataUrl.split(',')[1])
+            const arr = new Uint8Array(binary.length)
+            for (let i = 0; i < binary.length; i += 1) arr[i] = binary.charCodeAt(i)
+            resolve(new Blob([arr], { type: 'image/png' }))
+          } catch (err) {
+            console.warn('[CaptureHelper] toDataURL 폴백 실패:', err)
+            resolve(null)
+          }
+        }
+      } catch (err) {
+        console.warn('[CaptureHelper] 캡처 실패:', err)
+        resolve(null)
+      }
+    })
+
+    registerCapture(capture)
+    return () => registerCapture(null)
+  }, [gl, scene, camera, registerCapture])
+
+  return null
+}
+
 function ViewerFallback({ thumbnailUrl, modelUrl, message = '미리보기를 불러올 수 없습니다' }) {
   return (
     <div style={{ width: '100%', height: '100%', background: '#f1f5f9', borderRadius: 12,
@@ -1007,7 +1050,7 @@ const SUPPORTED = ['glb', 'gltf', 'fbx', 'obj']
 
 export default function AssetViewer360({
   modelUrl, fileExtension, textureUrls = [], thumbnailUrl, hdrUrl, hdrExtension,
-  autoRotate: initRotate = true, className = ''
+  autoRotate: initRotate = true, className = '', onCaptureReady
 }) {
   const [autoRotate, setAutoRotate] = useState(initRotate)
   const [wireframe, setWireframe]   = useState(false)
@@ -1105,6 +1148,9 @@ export default function AssetViewer360({
       <ErrorBoundary fallback={<ViewerFallback thumbnailUrl={thumbnailUrl} modelUrl={modelUrl} message="3D 미리보기 로딩에 실패했습니다" />}>
         <Canvas
           camera={{ position: [5, 3, 5], fov: 50 }}
+          // preserveDrawingBuffer: 썸네일 자동생성(캔버스 → PNG 캡처)을 위해 드로잉 버퍼 유지.
+          // 캡처 기능이 안 쓰여도(상세페이지 등) 동작에 영향 없고 성능 영향도 미미하다.
+          gl={{ preserveDrawingBuffer: true }}
           style={{ borderRadius: 12, width: '100%', height: '100%' }}
         >
           {/* GLB 내장 조명이 없는 경우에만 프리셋 조명 리그 추가 */}
@@ -1140,6 +1186,8 @@ export default function AssetViewer360({
             modelCenter={modelCenter}
             onDone={handleCaptureDone}
           />
+          {/* 썸네일 캡처 함수 등록 — onCaptureReady 가 주어질 때만 부모에 capture() 를 넘긴다. */}
+          {onCaptureReady && <CaptureHelper registerCapture={onCaptureReady} />}
 
           <OrbitControls
             ref={controlsRef}
