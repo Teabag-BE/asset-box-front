@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Avatar from '../../components/Avatar'
 import { timeAgo } from '../../utils/timeAgo'
+import { resolveUserName } from '../../utils/userNames'
 
 const PREVIEW_THEMES = [
   { bg: 'linear-gradient(145deg, #eef5f2 0%, #d8e4de 50%, #f8f4ea 100%)', main: '#5f7f72', accent: '#d6a94d' },
@@ -41,7 +42,17 @@ export default function AssetCard({
   fileExtension, viewCount, likeCount, commentCount, downloadCount,
 }) {
   const [imageFailed, setImageFailed] = useState(false)
-  const author = authorNickname || (authorId != null ? `#${authorId}` : '익명')
+  const [resolvedName, setResolvedName] = useState('')
+
+  // 백엔드 post DTO가 닉네임을 안 주면 authorId로 이름을 해석 (캐시됨)
+  useEffect(() => {
+    if (authorNickname || authorId == null) return undefined
+    let active = true
+    resolveUserName(authorId).then(n => { if (active) setResolvedName(n) })
+    return () => { active = false }
+  }, [authorNickname, authorId])
+
+  const author = authorNickname || resolvedName || (authorId != null ? `#${authorId}` : '익명')
   const created = timeAgo(createdAt)
   const showThumbnail = thumbnailUrl && !imageFailed
 

@@ -2,6 +2,7 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { postApi } from '../api/postApi'
 import { fileApi } from '../api/fileApi'
+import { resolveUserName } from '../utils/userNames'
 import { useAuth } from '../auth/AuthContext'
 import Spinner from '../components/Spinner'
 import Button from '../components/Button'
@@ -44,6 +45,16 @@ export default function AssetDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [downloadingId, setDownloadingId] = useState(null)
+  const [authorName, setAuthorName] = useState('')
+
+  // 백엔드 post DTO가 작성자 닉네임을 안 주므로 authorId로 이름을 해석 (캐시됨)
+  useEffect(() => {
+    const aid = post?.authorId
+    if (!aid) return undefined
+    let active = true
+    resolveUserName(aid).then(n => { if (active) setAuthorName(n) })
+    return () => { active = false }
+  }, [post?.authorId])
 
   useEffect(() => {
     let alive = true
@@ -80,7 +91,7 @@ export default function AssetDetailPage() {
   if (!post) return null
 
   const isMine = user && String(user.id) === String(post.authorId)
-  const author = post.authorNickname || `#${post.authorId}`
+  const author = post.authorNickname || authorName || `#${post.authorId}`
   const assetFiles = post.files ?? []
 
   // 다운로드 버튼: 미리보기용 accessUrl을 직접 열면 파일명이 S3 key(UUID)로 저장되므로,
