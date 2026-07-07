@@ -147,7 +147,7 @@ export default function AssetDetailPage() {
               </div>
               {isMine && (
                 <div className="flex gap-2 shrink-0">
-                  {/* TODO(백엔드 수정 API 연결되면): <Link to={`/assets/${id}/edit`}><Button variant="secondary" size="sm">수정</Button></Link> */}
+                  <Link to={`/assets/${id}/edit`}><Button variant="secondary" size="sm">수정</Button></Link>
                   <Button variant="danger" size="sm" onClick={handleDelete}>삭제</Button>
                 </div>
               )}
