@@ -667,8 +667,9 @@ function MaterialLab({
 
   return (
     <div style={{
-      position: 'absolute', top: 12, right: 12, zIndex: 10,
+      position: 'absolute', top: 12, right: 12, bottom: 12, zIndex: 10,
       display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
+      pointerEvents: 'none',
     }}>
       <button
         onClick={() => setOpen(v => !v)}
@@ -678,6 +679,7 @@ function MaterialLab({
           fontSize: 13, fontWeight: 600,
           background: 'rgba(255,255,255,0.92)', color: '#6d28d9',
           backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+          pointerEvents: 'auto', flex: '0 0 auto',
         }}
       >🧪 머티리얼 실험실</button>
 
@@ -686,11 +688,13 @@ function MaterialLab({
           display: 'flex', flexDirection: 'column', gap: 8,
           background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(4px)',
           borderRadius: 10, padding: 10, boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-          width: 220, maxHeight: 'calc(100% - 60px)', overflowY: 'auto',
+          width: 220, flex: '1 1 auto', minHeight: 0, overflowY: 'auto',
+          pointerEvents: 'auto',
         }}>
           {/* 베이스 재질 */}
           <div style={sectionTitle}>베이스 재질</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {chip(false, handleRestore, '↺ 오리지널', '__original__')}
             {BASE_PRESETS.map(p => chip(false, () => pickBase(p), p.label, p.id))}
           </div>
 
