@@ -284,7 +284,10 @@ export function buildMaterial(config = {}) {
       material.transmission = transmission
       material.transparent = true
       material.ior = num(cfg.ior, 1.5)
-      material.thickness = 0.5
+      // thickness(유리 두께)는 굴절 세기를 좌우한다. 고정값이면 큰 모델은 굴절이 약하고
+      // 작은 모델은 과하게 왜곡돼서, 적용하는 메시 크기에 맞춰 _thickness 를 넘겨받는다(applyToMesh).
+      material.thickness = num(cfg._thickness, 0.5)
+      material.envMapIntensity = 1.2   // 유리 반사가 살짝 더 또렷하게
     }
 
     // 반투명(opacity) — transmission 과 별개로 알파 투명.
@@ -316,14 +319,35 @@ function stashLabOriginal(mesh) {
   }
 }
 
+// 유리(transmission) 두께 힌트: 메시의 월드 크기(평균 치수)의 절반 정도를 두께로.
+// 큰 모델도 작은 모델도 자연스러운 굴절이 나오도록 [0.05, 3] 로 클램프.
+function thicknessHintFor(mesh) {
+  try {
+    const geo = mesh.geometry
+    if (!geo) return 0.5
+    if (!geo.boundingBox) geo.computeBoundingBox()
+    const size = new THREE.Vector3()
+    geo.boundingBox.getSize(size)
+    const scale = mesh.getWorldScale(new THREE.Vector3())
+    const avg = (size.x * scale.x + size.y * scale.y + size.z * scale.z) / 3
+    return Math.min(3, Math.max(0.05, avg * 0.5))
+  } catch {
+    return 0.5
+  }
+}
+
 // 단일 mesh 에 buildMaterial 결과를 적용(슬롯 수만큼 복제).
 function applyToMesh(mesh, config) {
   stashLabOriginal(mesh)
+  // 유리일 때만 메시 크기 기반 두께를 실어 보낸다.
+  const cfg = num(config.transmission, 0) > 0
+    ? { ...config, _thickness: thicknessHintFor(mesh) }
+    : config
   const materials = asMaterialArray(mesh.material)
   if (Array.isArray(mesh.material)) {
-    mesh.material = materials.map(() => buildMaterial(config)).map((m, i) => m || materials[i])
+    mesh.material = materials.map(() => buildMaterial(cfg)).map((m, i) => m || materials[i])
   } else {
-    const m = buildMaterial(config)
+    const m = buildMaterial(cfg)
     if (m) mesh.material = m
   }
 }
