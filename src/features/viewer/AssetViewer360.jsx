@@ -242,16 +242,26 @@ function LightingRig({ preset = 'studio' }) {
   )
 }
 
+// 환경맵 로더. .hdr(RGBELoader) / .exr(EXRLoader) / 등장방형 이미지(.jpg .png .webp, TextureLoader) 지원.
+// 로컬 드래그앤드롭 파일(blob URL)도 동일 경로로 처리된다.
+const IMAGE_ENV_EXTS = ['jpg', 'jpeg', 'png', 'webp']
+
 function HdrEnvironment({ url, extension }) {
   const { scene, gl } = useThree()
 
   useEffect(() => {
-    const loader = extension === 'exr' ? new EXRLoader() : new RGBELoader()
+    const isExr = extension === 'exr'
+    const isImage = IMAGE_ENV_EXTS.includes(extension)
+    const loader = isExr ? new EXRLoader() : isImage ? new THREE.TextureLoader() : new RGBELoader()
     let envMap = null
+    let disposed = false
 
     loader.load(
       url,
       (texture) => {
+        if (disposed) { texture.dispose?.(); return }
+        // LDR 이미지는 sRGB 로 읽어야 색이 정상. HDR/EXR 은 선형이라 그대로 둔다.
+        if (isImage) texture.colorSpace = THREE.SRGBColorSpace
         texture.mapping = THREE.EquirectangularReflectionMapping
         scene.background = texture
 
@@ -266,6 +276,7 @@ function HdrEnvironment({ url, extension }) {
     )
 
     return () => {
+      disposed = true
       scene.environment = null
       scene.background = null
       if (envMap) envMap.dispose()
@@ -1064,10 +1075,75 @@ export default function AssetViewer360({
   const [labConfig, setLabConfig]   = useState({ ...DEFAULT_CONFIG })  // 실험실 재질 config
   const [partSelect, setPartSelect] = useState(false)  // 파트 선택 모드 on/off
   const [selectedMesh, setSelectedMesh] = useState(null)  // 선택된 파트(THREE.Mesh|null)
+  const [customEnv, setCustomEnv] = useState(null)  // 로컬 드롭 환경맵 { url, extension, name } | null
+  const [envDragging, setEnvDragging] = useState(false)  // 환경맵 파일 드래그 중(오버레이 표시용)
   const controlsRef = useRef()
   const dragRef = useRef(null)  // 드래그 시작점 { x, y, az, el }
+  const envFileInputRef = useRef(null)  // 환경맵 파일 선택 input
+  const customEnvUrlRef = useRef(null)  // 현재 커스텀 환경맵 blob URL(언마운트 정리용, 항상 최신값 유지)
 
   const ext = fileExtension?.toLowerCase()
+
+  const ENV_EXTS = ['hdr', 'exr', 'jpg', 'jpeg', 'png', 'webp']
+
+  // 로컬 환경맵 파일을 blob URL 로 적용. 이전 blob URL 은 정리한다.
+  function applyEnvFile(file) {
+    if (!file) return false
+    const name = file.name || 'env'
+    const dot = name.lastIndexOf('.')
+    const fileExt = dot >= 0 ? name.slice(dot + 1).toLowerCase() : ''
+    if (!ENV_EXTS.includes(fileExt)) return false
+    const url = URL.createObjectURL(file)
+    customEnvUrlRef.current = url
+    setCustomEnv(prev => {
+      if (prev?.url) { try { URL.revokeObjectURL(prev.url) } catch { /* 무시 */ } }
+      return { url, extension: fileExt, name }
+    })
+    return true
+  }
+
+  function clearCustomEnv() {
+    customEnvUrlRef.current = null
+    setCustomEnv(prev => {
+      if (prev?.url) { try { URL.revokeObjectURL(prev.url) } catch { /* 무시 */ } }
+      return null
+    })
+  }
+
+  // 드래그된 것이 "파일"인지 확인. types 는 최신 브라우저에선 배열, 구형에선 DOMStringList 라
+  // Array.from 으로 통일해서 검사한다.
+  function isFileDrag(e) {
+    const types = e.dataTransfer?.types
+    return !!types && Array.from(types).includes('Files')
+  }
+
+  // 드래그앤드롭: 뷰어 위에 환경맵 파일을 떨구면 즉시 적용.
+  function handleEnvDragOver(e) {
+    // 파일 드래그일 때만 관여(모델 파트 클릭/조명 드래그 등과 무관).
+    if (isFileDrag(e)) {
+      e.preventDefault()
+      if (!envDragging) setEnvDragging(true)
+    }
+  }
+  function handleEnvDragLeave(e) {
+    // 컨테이너 밖으로 나갈 때만 해제(자식 위로 이동하는 leave 는 무시).
+    if (e.currentTarget.contains(e.relatedTarget)) return
+    setEnvDragging(false)
+  }
+  function handleEnvDrop(e) {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    setEnvDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    applyEnvFile(file)
+  }
+
+  // 언마운트 시 남은 환경맵 blob URL 정리(ref 로 항상 최신 URL 을 읽는다).
+  useEffect(() => {
+    return () => {
+      if (customEnvUrlRef.current) { try { URL.revokeObjectURL(customEnvUrlRef.current) } catch { /* 무시 */ } }
+    }
+  }, [])
 
   function handleLoaded(obj) {
     setLoadedObj(obj)
@@ -1134,7 +1210,13 @@ export default function AssetViewer360({
   }
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }} className={className}>
+    <div
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+      className={className}
+      onDragOver={handleEnvDragOver}
+      onDragLeave={handleEnvDragLeave}
+      onDrop={handleEnvDrop}
+    >
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
 
       {capturing && (
@@ -1143,6 +1225,21 @@ export default function AssetViewer360({
           background: 'rgba(239,68,68,0.9)', color: '#fff', fontSize: 12, fontWeight: 600,
           padding: '4px 12px', borderRadius: 99, zIndex: 10, pointerEvents: 'none'
         }}>● REC 6초 회전 캡처 중</div>
+      )}
+
+      {/* 환경맵 드롭 오버레이 — 파일 드래그 중에만 표시. pointerEvents:none 이라 드롭은 컨테이너가 받는다. */}
+      {envDragging && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 20, pointerEvents: 'none',
+          borderRadius: 12, border: '2px dashed #869B7E',
+          background: 'rgba(134,155,126,0.14)', backdropFilter: 'blur(1px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          color: '#3f5238', fontWeight: 700, gap: 6,
+        }}>
+          <span style={{ fontSize: 34 }}>🌅</span>
+          <span style={{ fontSize: 14 }}>환경맵을 여기에 놓으세요</span>
+          <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>.hdr · .exr · .jpg · .png (등장방형)</span>
+        </div>
       )}
 
       <ErrorBoundary fallback={<ViewerFallback thumbnailUrl={thumbnailUrl} modelUrl={modelUrl} message="3D 미리보기 로딩에 실패했습니다" />}>
@@ -1159,14 +1256,16 @@ export default function AssetViewer360({
           {/* 마우스로 끌어 이동하는 인터랙티브 키라이트(조명 이동 모드일 때만) */}
           <MovableKeyLight angle={lightAngle} active={lightMove} />
 
-          {/* 환경맵 우선순위: 에셋 업로드 HDR > '낮' 프리셋 HDR(실제 하늘) > RoomEnvironment.
-              '낮'을 고르면 번들된 실사 HDR(/hdr/day.hdr)이 배경+반사를 담당해 사진처럼 보인다.
-              (6MB라 낮 선택 시에만 로드) '밤'/'스튜디오'는 RoomEnvironment + LightingRig 배경. */}
-          {hdrUrl
-            ? <HdrEnvironment url={hdrUrl} extension={hdrExtension} />
-            : lighting === 'day'
-              ? <HdrEnvironment url="/hdr/day.hdr" extension="hdr" />
-              : <DefaultEnvironment />}
+          {/* 환경맵 우선순위: 로컬 드롭 환경맵 > 에셋 업로드 HDR > '낮' 프리셋 HDR(실제 하늘) > RoomEnvironment.
+              드롭한 환경맵이 있으면 그것이 배경+반사를 담당한다.
+              '낮'을 고르면 번들된 실사 HDR(/hdr/day.hdr)이 사진처럼 보인다(6MB라 낮 선택 시에만 로드). */}
+          {customEnv
+            ? <HdrEnvironment url={customEnv.url} extension={customEnv.extension} />
+            : hdrUrl
+              ? <HdrEnvironment url={hdrUrl} extension={hdrExtension} />
+              : lighting === 'day'
+                ? <HdrEnvironment url="/hdr/day.hdr" extension="hdr" />
+                : <DefaultEnvironment />}
 
           <Suspense fallback={<Loader />}>
             <Center>
@@ -1259,6 +1358,40 @@ export default function AssetViewer360({
           backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
         }}
       >🔦 조명 이동{lightMove ? ' ON' : ''}</button>
+
+      {/* 환경맵 불러오기 — 조명 이동 버튼(bottom 52) 위. 드래그앤드롭 대체 수단 + 현재 커스텀 환경맵 표시/해제. */}
+      <input
+        ref={envFileInputRef}
+        type="file"
+        accept=".hdr,.exr,.jpg,.jpeg,.png,.webp,image/*"
+        style={{ display: 'none' }}
+        onChange={e => { applyEnvFile(e.target.files?.[0]); e.target.value = '' }}
+      />
+      <div style={{ position: 'absolute', bottom: 92, left: 12, zIndex: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button
+          onClick={() => envFileInputRef.current?.click()}
+          title={customEnv ? `내 환경맵: ${customEnv.name}` : '환경맵 불러오기 — 또는 .hdr/.exr/.jpg 파일을 뷰어에 끌어다 놓으세요'}
+          style={{
+            padding: '4px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            fontSize: 13, fontWeight: 600,
+            background: customEnv ? '#869B7E' : 'rgba(255,255,255,0.92)',
+            color: customEnv ? '#fff' : '#3f5238',
+            backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+          }}
+        >🌅 {customEnv ? '내 환경맵' : '환경맵'}</button>
+        {customEnv && (
+          <button
+            onClick={clearCustomEnv}
+            title="환경맵 해제 (프리셋으로 복귀)"
+            style={{
+              padding: '4px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 700, color: '#3f5238',
+              background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(4px)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+            }}
+          >✕</button>
+        )}
+      </div>
 
       {loadedObj && (
         <MaterialLab
