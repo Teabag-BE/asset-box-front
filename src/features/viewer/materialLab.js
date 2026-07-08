@@ -208,7 +208,7 @@ export const BASE_PRESETS = [
   { id: 'plastic',  label: '플라스틱',   params: { color: '#3b82f6', metalness: 0.0, roughness: 0.4,  clearcoat: 0.5, transmission: 0.0 } },
   { id: 'rubber',   label: '고무',      params: { color: '#2a2a2e', metalness: 0.0, roughness: 0.95, clearcoat: 0.0, transmission: 0.0 } },
   { id: 'ceramic',  label: '세라믹',     params: { color: '#f5f0e8', metalness: 0.0, roughness: 0.25, clearcoat: 0.6, transmission: 0.0 } },
-  { id: 'glass',    label: '유리',      params: { color: '#eaf4ff', metalness: 0.0, roughness: 0.05, clearcoat: 0.0, transmission: 0.95, ior: 1.5 } },
+  { id: 'glass',    label: '유리',      params: { color: '#ffffff', metalness: 0.0, roughness: 0.02, clearcoat: 0.0, transmission: 1.0, ior: 1.5 } },
   { id: 'clay',     label: '클레이',     params: { color: '#cfcccc', metalness: 0.05, roughness: 0.7, clearcoat: 0.0, transmission: 0.0 } },
 ]
 
@@ -278,16 +278,22 @@ export function buildMaterial(config = {}) {
       material.emissiveIntensity = emissiveIntensity
     }
 
-    // 투명/유리(transmission).
+    // 투명/유리(transmission). 실제 유리처럼 보이도록 굴절·반사·감쇠를 함께 세팅.
     const transmission = num(cfg.transmission, 0)
     if (transmission > 0) {
       material.transmission = transmission
       material.transparent = true
+      material.metalness = 0            // 유리는 비금속(금속성이 섞이면 탁해진다)
       material.ior = num(cfg.ior, 1.5)
       // thickness(유리 두께)는 굴절 세기를 좌우한다. 고정값이면 큰 모델은 굴절이 약하고
       // 작은 모델은 과하게 왜곡돼서, 적용하는 메시 크기에 맞춰 _thickness 를 넘겨받는다(applyToMesh).
-      material.thickness = num(cfg._thickness, 0.5)
-      material.envMapIntensity = 1.2   // 유리 반사가 살짝 더 또렷하게
+      const thickness = num(cfg._thickness, 0.5)
+      material.thickness = thickness
+      material.specularIntensity = 1.0  // 표면 프레넬 반사를 또렷하게 — 유리 특유의 하이라이트
+      material.envMapIntensity = 1.5     // 환경 반사 강조(HDR/스튜디오가 유리에 비쳐야 유리다움)
+      // 감쇠: 빛이 두께를 지날수록 아주 옅게 색이 물들어 깊이감을 준다(얇은 곳은 맑게 유지).
+      material.attenuationColor = new THREE.Color('#eaf6ff')
+      material.attenuationDistance = Math.max(thickness * 5, 0.5)
     }
 
     // 반투명(opacity) — transmission 과 별개로 알파 투명.
