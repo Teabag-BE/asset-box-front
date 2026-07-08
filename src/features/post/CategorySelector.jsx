@@ -15,9 +15,16 @@ export default function CategorySelector({ onSelect }) {
     categoryApi.getRoots().then(setRoots).catch(() => {})
   }, [])
 
+  // 대분류만 필수, 중·소분류는 선택. 선택된 가장 깊은 단계의 id 를 categoryId 로 넘긴다.
+  // (대분류만 고르면 대분류 id, 중분류까지 고르면 중분류 id, 소분류까지 고르면 소분류 id)
+  function emit(root, mid, leaf) {
+    const deepest = leaf || mid || root
+    onSelect(deepest ? Number(deepest) : null)
+  }
+
   async function handleRoot(id) {
     setRootId(id); setMidId(''); setLeafId(''); setMids([]); setLeaves([])
-    onSelect(null)
+    emit(id, '', '')
     if (id) {
       const children = await categoryApi.getChildren(id)
       setMids(children)
@@ -26,7 +33,7 @@ export default function CategorySelector({ onSelect }) {
 
   async function handleMid(id) {
     setMidId(id); setLeafId(''); setLeaves([])
-    onSelect(null)
+    emit(rootId, id, '')
     if (id) {
       const children = await categoryApi.getChildren(id)
       setLeaves(children)
@@ -35,14 +42,14 @@ export default function CategorySelector({ onSelect }) {
 
   function handleLeaf(id) {
     setLeafId(id)
-    onSelect(id ? Number(id) : null)
+    emit(rootId, midId, id)
   }
 
   return (
     <div className="space-y-2">
       <label className="text-sm font-medium text-slate-700">
         카테고리 <span className="text-crimson-600">*</span>
-        <span className="text-slate-400 font-normal"> 소분류까지 선택</span>
+        <span className="text-slate-400 font-normal"> 대분류는 필수 · 중/소분류는 선택 (안 골라도 태그로 검색돼요)</span>
       </label>
       <select value={rootId} onChange={e => handleRoot(e.target.value)} className={selectClass}>
         <option value="">대분류 선택</option>

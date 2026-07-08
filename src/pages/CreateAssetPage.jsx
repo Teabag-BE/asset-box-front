@@ -192,7 +192,7 @@ export default function CreateAssetPage() {
   async function onSubmit(e) {
     e.preventDefault()
     setError('')
-    if (!categoryId) { setError('카테고리는 소분류까지 선택해야 합니다.'); return }
+    if (!categoryId) { setError('대분류를 선택해주세요. (중·소분류는 선택 사항이에요)'); return }
     if (!assetPackage) { setError('GLB, FBX 또는 ZIP 파일은 필수입니다.'); return }
 
     // 썸네일이 없으면, 미리보기가 준비된 경우 자동 캡처를 시도한다(백엔드 필수라 폴백으로 채움).

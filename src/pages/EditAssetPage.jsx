@@ -44,7 +44,7 @@ export default function EditAssetPage() {
     e.preventDefault()
     setError('')
     if (!categoryId) {
-      setError('카테고리는 소분류까지 선택해야 합니다.\n(바꾸지 않으려면 카테고리를 건드리지 마세요 — 기존 분류가 유지됩니다)')
+      setError('대분류를 선택해주세요. (중·소분류는 선택 사항)\n(바꾸지 않으려면 카테고리를 건드리지 마세요 — 기존 분류가 유지됩니다)')
       return
     }
     setSaving(true)
@@ -77,7 +77,7 @@ export default function EditAssetPage() {
         </label>
         <div>
           <CategorySelector onSelect={setCategoryId} />
-          <p className="text-xs text-slate-400 mt-1">카테고리를 바꾸려면 소분류까지 다시 선택하세요. 그대로 두면 기존 분류가 유지됩니다.</p>
+          <p className="text-xs text-slate-400 mt-1">카테고리를 바꾸려면 대분류부터 다시 선택하세요(중·소분류는 선택). 그대로 두면 기존 분류가 유지됩니다.</p>
         </div>
         <TagInput value={tags} onChange={setTags} />
         <p className="text-xs text-slate-400">※ 모델·썸네일 파일 교체는 준비 중입니다. 지금은 제목·설명·카테고리·태그만 수정됩니다.</p>
