@@ -549,7 +549,7 @@ function ModelLoader({ url, extension, textureUrls, wireframe, onLoaded, onLight
 
 function ViewerControls({ autoRotate, wireframe, capturing, onToggleRotate, onToggleWireframe, onReset, onCapture }) {
   const btn = (active, onClick, label, title, extra = '') => (
-    <button onClick={onClick} title={title} style={{
+    <button type="button" onClick={onClick} title={title} style={{
       padding: '4px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 14,
       background: active ? '#ede9fe' : 'transparent',
       color: active ? '#6d28d9' : extra === 'danger' ? '#ef4444' : '#475569',
@@ -588,7 +588,7 @@ function LightingPicker({ value, onChange }) {
       {LIGHTING_OPTIONS.map(opt => {
         const active = value === opt.id
         return (
-          <button
+          <button type="button"
             key={opt.id}
             onClick={() => onChange(opt.id)}
             title={opt.title}
@@ -653,7 +653,7 @@ function MaterialLab({
   }
 
   const chip = (active, onClick, label, key) => (
-    <button key={key} onClick={onClick} style={{
+    <button type="button" key={key} onClick={onClick} style={{
       padding: '3px 8px', borderRadius: 6,
       border: active ? '1px solid #6d28d9' : '1px solid #e2e8f0',
       cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap',
@@ -682,7 +682,7 @@ function MaterialLab({
       display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
       pointerEvents: 'none',
     }}>
-      <button
+      <button type="button"
         onClick={() => setOpen(v => !v)}
         title="머티리얼 실험실"
         style={{
@@ -761,7 +761,7 @@ function MaterialLab({
           )}
 
           {/* 원본 복원 */}
-          <button
+          <button type="button"
             onClick={handleRestore}
             style={{
               marginTop: 2, padding: '5px 8px', borderRadius: 6, border: '1px solid #e2e8f0',
@@ -989,7 +989,7 @@ function ModelStats({ obj }) {
 
   if (!open) {
     return (
-      <button
+      <button type="button"
         onClick={() => setOpen(true)}
         title="모델 스탯 — 폴리 예산 보기"
         style={{
@@ -1016,7 +1016,7 @@ function ModelStats({ obj }) {
         marginBottom: 8,
       }}>
         <span style={{ fontWeight: 700, color: '#6d28d9' }}>📊 모델 스탯</span>
-        <button
+        <button type="button"
           onClick={() => setOpen(false)}
           title="접기"
           style={{
@@ -1341,7 +1341,7 @@ export default function AssetViewer360({
       <LightingPicker value={lighting} onChange={setLighting} />
 
       {/* 조명 이동 토글 버튼 — LightingPicker(좌하단 bottom 12) 바로 위. zIndex 10 로 오버레이보다 위. */}
-      <button
+      <button type="button"
         onClick={() => setLightMove(v => {
           const next = !v
           // 조명 이동을 켜면 파트 선택을 끈다(상호 배타, 클릭 충돌 방지).
@@ -1368,7 +1368,7 @@ export default function AssetViewer360({
         onChange={e => { applyEnvFile(e.target.files?.[0]); e.target.value = '' }}
       />
       <div style={{ position: 'absolute', bottom: 92, left: 12, zIndex: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button
+        <button type="button"
           onClick={() => envFileInputRef.current?.click()}
           title={customEnv ? `내 환경맵: ${customEnv.name}` : '환경맵 불러오기 — 또는 .hdr/.exr/.jpg 파일을 뷰어에 끌어다 놓으세요'}
           style={{
@@ -1380,7 +1380,7 @@ export default function AssetViewer360({
           }}
         >🌅 {customEnv ? '내 환경맵' : '환경맵'}</button>
         {customEnv && (
-          <button
+          <button type="button"
             onClick={clearCustomEnv}
             title="환경맵 해제 (프리셋으로 복귀)"
             style={{
