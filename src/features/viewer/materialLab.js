@@ -314,14 +314,14 @@ export function buildMaterial(config = {}) {
 
 // ── 4) 적용 / 복원 ────────────────────────────────────────────────────
 
-// 원본 머티리얼을 mesh.userData 에 1회 보관(실험실 전용 키).
-// 이미 기존 autoFix/neutralize 가 assetboxOriginalMaterial 에 보관해 두었으면
-// 그걸 훼손하지 않도록 별도 키를 쓴다. 없으면 현재 material 을 최초 1회 저장.
+// 실험실에 처음 손대기 직전(= 화면에 보이던 상태)의 재질을 1회 보관(실험실 전용 키).
+// 주의: autoFix 가 텍스처를 입혀 둔 모델은 assetboxOriginalMaterial 에 'autoFix 이전의
+// 맵 없는 원본'이 들어있다. 실험실의 '오리지널'은 사용자가 보던 화면(=텍스처 입은 재질)으로
+// 돌아가야 하므로, 그 키를 쓰지 않고 반드시 '현재 mesh.material' 을 저장한다.
+// (예전엔 assetboxOriginalMaterial 을 우선 사용해서, 복원 시 텍스처가 사라지는 버그가 있었다.)
 function stashLabOriginal(mesh) {
   if (mesh.userData.assetboxLabOriginal === undefined) {
-    mesh.userData.assetboxLabOriginal = mesh.userData.assetboxOriginalMaterial !== undefined
-      ? mesh.userData.assetboxOriginalMaterial
-      : mesh.material
+    mesh.userData.assetboxLabOriginal = mesh.material
   }
 }
 
