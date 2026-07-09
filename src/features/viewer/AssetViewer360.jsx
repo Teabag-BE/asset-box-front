@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/immutability, react-hooks/exhaustive-deps */
 // react-three-fiber 뷰어: useFrame/useThree 안에서 camera·scene 을 직접 변경하는 건
 // r3f 의 정상 관용구라 react-hooks lint 규칙을 이 파일에 한해 끈다.
-import { Suspense, useState, useRef, useEffect, useMemo, Component } from 'react'
+import { Suspense, useState, useRef, useEffect, useMemo, useCallback, Component } from 'react'
 import { Canvas, useLoader, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF, useProgress, Html, Center } from '@react-three/drei'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
@@ -706,7 +706,21 @@ function MaterialLab({
           <div style={sectionTitle}>베이스 재질</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {chip(false, handleRestore, '↺ 오리지널', '__original__')}
-            {BASE_PRESETS.map(p => chip(false, () => pickBase(p), p.label, p.id))}
+            {BASE_PRESETS.map(p => (
+              <button
+                type="button" key={p.id}
+                draggable
+                onDragStart={e => {
+                  try { e.dataTransfer.setData(MATERIAL_DND_TYPE, p.id); e.dataTransfer.effectAllowed = 'copy' } catch { /* 무시 */ }
+                }}
+                onClick={() => pickBase(p)}
+                title={`클릭: ${selectedMesh ? '선택 파트' : '전체'}에 적용 · 드래그: 모델 위 원하는 파트에 적용`}
+                style={{
+                  padding: '3px 8px', borderRadius: 6, border: '1px solid #e2e8f0',
+                  cursor: 'grab', fontSize: 11, whiteSpace: 'nowrap', background: '#fff', color: '#475569',
+                }}
+              >⠿ {p.label}</button>
+            ))}
           </div>
 
           {/* 표면 질감 */}
@@ -1059,6 +1073,35 @@ function ModelStats({ obj }) {
 
 const SUPPORTED = ['glb', 'gltf', 'fbx', 'obj']
 
+// 재질 드래그앤드롭 전용 DnD MIME. 환경맵 파일 드래그('Files')와 구분하는 열쇠.
+const MATERIAL_DND_TYPE = 'application/x-assetbox-material'
+
+// Canvas 내부에서 useThree 로 카메라/캔버스를 얻어, 화면 좌표(clientX/Y) → 레이캐스트로
+// 그 지점의 메시를 찾아주는 pick 함수를 부모에 등록한다. (DOM drop 은 Canvas 밖에서 처리되므로
+// 부모가 이 함수로 '드롭한 곳의 파트'를 알아낸다.)
+function DropPicker({ target, register }) {
+  const { camera, gl, scene } = useThree()
+  const rc = useRef(new THREE.Raycaster())
+  useEffect(() => {
+    const pick = (clientX, clientY) => {
+      try {
+        const rect = gl.domElement.getBoundingClientRect()
+        const nx = ((clientX - rect.left) / rect.width) * 2 - 1
+        const ny = -((clientY - rect.top) / rect.height) * 2 + 1
+        rc.current.setFromCamera({ x: nx, y: ny }, camera)
+        const hits = rc.current.intersectObject(target || scene, true)
+        const hit = hits.find(h => h.object && h.object.isMesh)
+        return hit ? hit.object : null
+      } catch {
+        return null
+      }
+    }
+    register(pick)
+    return () => register(null)
+  }, [camera, gl, scene, target, register])
+  return null
+}
+
 export default function AssetViewer360({
   modelUrl, fileExtension, textureUrls = [], thumbnailUrl, hdrUrl, hdrExtension,
   autoRotate: initRotate = true, className = '', onCaptureReady
@@ -1077,6 +1120,9 @@ export default function AssetViewer360({
   const [selectedMesh, setSelectedMesh] = useState(null)  // 선택된 파트(THREE.Mesh|null)
   const [customEnv, setCustomEnv] = useState(null)  // 로컬 드롭 환경맵 { url, extension, name } | null
   const [envDragging, setEnvDragging] = useState(false)  // 환경맵 파일 드래그 중(오버레이 표시용)
+  const [matDragging, setMatDragging] = useState(false)  // 재질 스와치 드래그 중(오버레이 표시용)
+  const pickRef = useRef(null)  // DropPicker 가 등록하는 pick(clientX,clientY) → mesh|null
+  const registerPick = useCallback((fn) => { pickRef.current = fn }, [])  // 안정적 등록 함수(정체성 고정)
   const controlsRef = useRef()
   const dragRef = useRef(null)  // 드래그 시작점 { x, y, az, el }
   const envFileInputRef = useRef(null)  // 환경맵 파일 선택 input
@@ -1125,17 +1171,59 @@ export default function AssetViewer360({
       if (!envDragging) setEnvDragging(true)
     }
   }
-  function handleEnvDragLeave(e) {
-    // 컨테이너 밖으로 나갈 때만 해제(자식 위로 이동하는 leave 는 무시).
-    if (e.currentTarget.contains(e.relatedTarget)) return
-    setEnvDragging(false)
-  }
   function handleEnvDrop(e) {
     if (!isFileDrag(e)) return
     e.preventDefault()
     setEnvDragging(false)
     const file = e.dataTransfer.files?.[0]
     applyEnvFile(file)
+  }
+
+  // 재질 스와치 드래그인지 확인(커스텀 MIME 존재 여부).
+  function isMaterialDrag(e) {
+    const types = e.dataTransfer?.types
+    return !!types && Array.from(types).includes(MATERIAL_DND_TYPE)
+  }
+
+  // 재질 스와치를 모델 위에 떨구면 → 드롭 지점의 파트(없으면 전체)에 그 프리셋을 즉시 적용.
+  function handleMaterialDrop(e) {
+    e.preventDefault()
+    setMatDragging(false)
+    try {
+      const id = e.dataTransfer.getData(MATERIAL_DND_TYPE)
+      const preset = BASE_PRESETS.find(p => p.id === id)
+      if (!preset || !loadedObj) return
+      const mesh = pickRef.current ? pickRef.current(e.clientX, e.clientY) : null
+      // 프리셋의 물리 속성만 덮어쓰고 표면/발광 등 나머지는 현재 config 유지(패널 클릭과 동일 규칙).
+      const next = {
+        ...labConfig,
+        color: preset.params.color ?? labConfig.color,
+        metalness: preset.params.metalness ?? labConfig.metalness,
+        roughness: preset.params.roughness ?? labConfig.roughness,
+        clearcoat: preset.params.clearcoat ?? labConfig.clearcoat,
+        transmission: preset.params.transmission ?? 0,
+        ior: preset.params.ior ?? labConfig.ior,
+      }
+      setLabConfig(next)
+      applyMaterialConfig(loadedObj, next, mesh || null)
+    } catch (err) {
+      console.warn('[재질드롭] 실패:', err)
+    }
+  }
+
+  // 컨테이너 통합 드래그 핸들러 — 재질 드래그와 환경맵 파일 드래그를 타입으로 분기(상호 무간섭).
+  function handleContainerDragOver(e) {
+    if (isMaterialDrag(e)) { e.preventDefault(); if (!matDragging) setMatDragging(true); return }
+    handleEnvDragOver(e)
+  }
+  function handleContainerDragLeave(e) {
+    if (e.currentTarget.contains(e.relatedTarget)) return
+    setEnvDragging(false)
+    setMatDragging(false)
+  }
+  function handleContainerDrop(e) {
+    if (isMaterialDrag(e)) { handleMaterialDrop(e); return }
+    handleEnvDrop(e)
   }
 
   // 언마운트 시 남은 환경맵 blob URL 정리(ref 로 항상 최신 URL 을 읽는다).
@@ -1213,9 +1301,9 @@ export default function AssetViewer360({
     <div
       style={{ position: 'relative', width: '100%', height: '100%' }}
       className={className}
-      onDragOver={handleEnvDragOver}
-      onDragLeave={handleEnvDragLeave}
-      onDrop={handleEnvDrop}
+      onDragOver={handleContainerDragOver}
+      onDragLeave={handleContainerDragLeave}
+      onDrop={handleContainerDrop}
     >
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
 
@@ -1239,6 +1327,21 @@ export default function AssetViewer360({
           <span style={{ fontSize: 34 }}>🌅</span>
           <span style={{ fontSize: 14 }}>환경맵을 여기에 놓으세요</span>
           <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>.hdr · .exr · .jpg · .png (등장방형)</span>
+        </div>
+      )}
+
+      {/* 재질 드래그 오버레이 — 재질 스와치를 끌고 오는 동안 표시. pointerEvents:none 이라 드롭은 컨테이너가 받는다. */}
+      {matDragging && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 20, pointerEvents: 'none',
+          borderRadius: 12, border: '2px dashed #6d28d9',
+          background: 'rgba(109,40,217,0.10)', backdropFilter: 'blur(1px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          color: '#5b21b6', fontWeight: 700, gap: 6,
+        }}>
+          <span style={{ fontSize: 34 }}>🎨</span>
+          <span style={{ fontSize: 14 }}>원하는 파트 위에 놓으면 그 부분만 적용</span>
+          <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>빈 곳에 놓으면 전체 적용</span>
         </div>
       )}
 
@@ -1291,6 +1394,9 @@ export default function AssetViewer360({
           />
           {/* 썸네일 캡처 함수 등록 — onCaptureReady 가 주어질 때만 부모에 capture() 를 넘긴다. */}
           {onCaptureReady && <CaptureHelper registerCapture={onCaptureReady} />}
+
+          {/* 재질 드롭용 레이캐스트 pick 함수 등록(모델 로드 후에만). */}
+          {loadedObj && <DropPicker target={loadedObj} register={registerPick} />}
 
           <OrbitControls
             ref={controlsRef}
@@ -1412,6 +1518,36 @@ export default function AssetViewer360({
       )}
 
       {loadedObj && <ModelStats obj={loadedObj} />}
+
+      {/* 재질 스와치 독(하단 중앙) — 스와치를 모델 위로 끌어다 놓으면 그 파트에 재질 적용.
+          환경맵 파일 드롭과는 다른 DnD 타입이라 서로 무간섭. */}
+      {loadedObj && (
+        <div style={{
+          position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 10,
+          display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 5,
+          maxWidth: '62%', padding: '5px 9px', borderRadius: 99,
+          background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(4px)',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#6d28d9', marginRight: 2 }}>🎨 끌어다 적용</span>
+          {BASE_PRESETS.map(p => (
+            <div
+              key={p.id}
+              draggable
+              onDragStart={e => {
+                try { e.dataTransfer.setData(MATERIAL_DND_TYPE, p.id); e.dataTransfer.effectAllowed = 'copy' } catch { /* 무시 */ }
+              }}
+              title={`${p.label} — 모델 위로 끌어다 놓으면 적용`}
+              style={{
+                width: 20, height: 20, borderRadius: '50%', cursor: 'grab', flex: '0 0 auto',
+                background: p.params.color || '#ccc',
+                border: '1px solid rgba(0,0,0,0.18)',
+                boxShadow: (p.params.metalness ?? 0) > 0.5 ? 'inset 0 1px 3px rgba(255,255,255,0.85)' : 'none',
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* 내장 조명 배지 — 좌상단 ModelStats(top 10) 아래로 내려 겹침 방지. */}
       {embeddedLights && (
