@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { unzipSync } from 'fflate'
 import { postApi } from '../api/postApi'
 import Button from '../components/Button'
+import FileDropzone from '../components/FileDropzone'
 import TagInput from '../features/post/TagInput'
 import CategorySelector from '../features/post/CategorySelector'
 import { toAssetZipFile } from '../utils/assetZip'
@@ -159,10 +160,21 @@ export default function CreateAssetPage() {
     }
   }, [])
 
-  function onThumb(e) {
-    const f = e.target.files?.[0]
+  // 썸네일 파일 선택/드롭 처리. 드롭존과 자동캡처 양쪽에서 재사용.
+  function onThumbFile(f) {
     setThumbnail(f ?? null)
     setPreview(f ? URL.createObjectURL(f) : '')
+  }
+
+  // 3D 에셋 파일 선택/드롭 처리. 드롭은 accept 필터가 안 먹으므로 확장자를 직접 검사해 친절히 안내.
+  function onAssetFile(f) {
+    if (!f) { setAssetPackage(null); return }
+    if (!/\.(glb|fbx|zip)$/i.test(f.name)) {
+      setError(`"${f.name}" 은 지원하지 않는 형식이에요. .glb, .fbx, .zip 파일만 올릴 수 있어요.`)
+      return
+    }
+    setError('')
+    setAssetPackage(f)
   }
 
   // 미리보기 화면 → PNG 캡처 → 썸네일로 사용. 성공 시 생성된 File 을, 실패 시 null 을 반환한다.
@@ -251,7 +263,14 @@ export default function CreateAssetPage() {
             썸네일 <span className="text-crimson-600">*</span>
             <span className="text-slate-400 font-normal"> (모델로 자동 생성 가능)</span>
           </label>
-          <input type="file" accept="image/*" onChange={onThumb} className="text-sm text-slate-500" />
+          <FileDropzone
+            accept="image/*"
+            icon="🖼️"
+            label="썸네일 이미지를 끌어다 놓거나 클릭해서 선택"
+            hint="모델 미리보기에서 자동 생성할 수도 있어요"
+            file={thumbnail}
+            onFile={onThumbFile}
+          />
           {preview && (
             <img src={preview} alt="미리보기" className="mt-2 w-full max-h-56 object-contain rounded-lg border border-linen-200" />
           )}
@@ -262,10 +281,14 @@ export default function CreateAssetPage() {
             3D 에셋 패키지 <span className="text-crimson-600">*</span>
             <span className="text-slate-400 font-normal"> .glb, .fbx 또는 .zip</span>
           </label>
-          <input type="file" accept=".glb,.fbx,.zip,model/gltf-binary,application/zip,application/x-zip-compressed" required
-            onChange={e => setAssetPackage(e.target.files?.[0] ?? null)}
-            className="text-sm text-slate-500" />
-          {assetPackage && <span className="block mt-1 text-xs text-slate-400">{assetPackage.name}</span>}
+          <FileDropzone
+            accept=".glb,.fbx,.zip,model/gltf-binary,application/zip,application/x-zip-compressed"
+            icon="📦"
+            label="3D 파일을 끌어다 놓거나 클릭해서 선택"
+            hint=".glb / .fbx / .zip · 최대 50MB · GLB 권장"
+            file={assetPackage}
+            onFile={onAssetFile}
+          />
 
           {/* 업로드 전 3D 미리보기 — 준비되면 뷰어, 아니면 안내만. 실패해도 폼 제출엔 영향 없음. */}
           {assetPackage && (
