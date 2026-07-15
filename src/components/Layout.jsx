@@ -42,6 +42,9 @@ export default function Layout() {
             </nav>
           )}
 
+          {/* 미니게임 오락실 — 누구나 접근 (대기 중 플레이) */}
+          <Link to="/games" className={`${navCls('/games')} shrink-0`}>🎮 게임</Link>
+
           {user && (
             <form className="hidden md:block flex-1 max-w-xs"
               onSubmit={e => { e.preventDefault(); const q = e.target.q.value.trim(); if (q) navigate(`/search?q=${encodeURIComponent(q)}`) }}>
