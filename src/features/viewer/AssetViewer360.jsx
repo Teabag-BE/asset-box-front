@@ -9,7 +9,31 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import * as THREE from 'three'
+
+// 실험실에서 바꾼 재질이 반영된 현재 모델(root)을 .glb 로 내보내 다운로드한다.
+function downloadModifiedGlb(root, onError) {
+  try {
+    new GLTFExporter().parse(
+      root,
+      (result) => {
+        const blob = new Blob([result], { type: 'model/gltf-binary' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'assetbox-custom.glb'
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      },
+      (err) => { console.warn('[GLB export] 실패:', err); onError?.() },
+      { binary: true },
+    )
+  } catch (e) {
+    console.warn('[GLB export] 예외:', e)
+    onError?.()
+  }
+}
 import {
   autoFixMaterials,
   neutralizeEmptyMaterials,
@@ -709,6 +733,17 @@ function MaterialLab({
             {BASE_PRESETS.map(p => chip(false, () => pickBase(p), p.label, p.id))}
           </div>
 
+          {/* 변형본 다운로드 — 실험실에서 바꾼 재질 그대로 .glb 로 내보낸다. */}
+          <button type="button"
+            onClick={() => downloadModifiedGlb(root)}
+            title="지금 화면의 재질/색이 반영된 모델을 .glb 로 저장"
+            style={{
+              padding: '5px 8px', borderRadius: 8, border: '1px solid #c4b5fd',
+              background: '#f5f3ff', color: '#6d28d9', cursor: 'pointer',
+              fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+            }}
+          >💾 변형본 .glb 다운로드</button>
+
           {/* 표면 질감 */}
           <div style={sectionTitle}>표면 질감</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -797,11 +832,17 @@ function MovableKeyLight({ angle, active }) {
   return (
     <>
       {/* 강한 키라이트 — 기본 target 이 원점(0,0,0)이라 그대로 모델을 비춘다. */}
-      <directionalLight position={position} intensity={1.8} color={0xfff4e6} castShadow />
-      {/* 광원 위치 시각화용 작은 발광 구 — "빛이 여기 있다"를 보여준다. */}
+      <directionalLight position={position} intensity={2.2} color={0xfff4e6} castShadow />
+      {/* 근처를 은은히 밝혀 '빛 덩어리'가 있다는 느낌을 준다. */}
+      <pointLight position={position} intensity={0.6} distance={22} color={0xfff4e6} />
+      {/* 광원 위치를 크게 시각화 — 밝은 코어 + 반투명 후광으로 '태양'처럼 보이게(직관적). */}
       <mesh position={position}>
-        <sphereGeometry args={[0.25, 16, 16]} />
-        <meshBasicMaterial color={0xfff4e6} />
+        <sphereGeometry args={[0.55, 24, 24]} />
+        <meshBasicMaterial color={0xfff2d6} toneMapped={false} />
+      </mesh>
+      <mesh position={position}>
+        <sphereGeometry args={[1.0, 24, 24]} />
+        <meshBasicMaterial color={0xffe8b0} transparent opacity={0.25} toneMapped={false} depthWrite={false} />
       </mesh>
     </>
   )
@@ -903,7 +944,9 @@ function computeModelStats(obj) {
   if (!obj) return null
   try {
     let triangles = 0
-    let vertices  = 0
+    let vertices  = 0        // 렌더 버텍스(three.js가 노멀/UV 이음새에서 분할 저장)
+    let uniqueVertices = 0   // 유니크 위치 버텍스(모델링 툴의 버텍스 수에 근접)
+    let uniqueCapped = false // 너무 큰 모델은 유니크 계산을 생략
     let meshCount = 0
     const materials = new Set()
     const textures  = new Set()
@@ -914,7 +957,21 @@ function computeModelStats(obj) {
 
       const geo = node.geometry
       const pos = geo.attributes && geo.attributes.position
-      if (pos) vertices += pos.count
+      if (pos) {
+        vertices += pos.count
+        // 위치가 같으면(노멀/UV 때문에 쪼개졌어도) 하나로 세서 Blender 등 모델링 툴 수치에 맞춘다.
+        // 대형 모델(50만+)은 성능상 생략하고 렌더 버텍스로 대체.
+        if (pos.count <= 500000) {
+          const a = pos.array
+          const meshSet = new Set()
+          for (let i = 0; i < pos.count; i++) {
+            meshSet.add(`${Math.round(a[i * 3] * 1e4)},${Math.round(a[i * 3 + 1] * 1e4)},${Math.round(a[i * 3 + 2] * 1e4)}`)
+          }
+          uniqueVertices += meshSet.size
+        } else {
+          uniqueCapped = true
+        }
+      }
       if (geo.index) triangles += geo.index.count / 3
       else if (pos) triangles += pos.count / 3
 
@@ -950,6 +1007,7 @@ function computeModelStats(obj) {
     return {
       triangles: Math.round(triangles),
       vertices,
+      uniqueVertices: uniqueCapped ? null : uniqueVertices,
       meshCount,
       materialCount: materials.size,
       textureCount: textures.size,
@@ -974,7 +1032,7 @@ function ModelStats({ obj }) {
 
   const rows = [
     { label: '삼각형', value: formatNum(stats.triangles), emphasize: true },
-    { label: '버텍스', value: formatNum(stats.vertices) },
+    { label: '버텍스', value: formatNum(stats.uniqueVertices ?? stats.vertices) },
     { label: '메시', value: formatNum(stats.meshCount) },
     { label: '머티리얼', value: formatNum(stats.materialCount) },
     { label: '텍스처', value: formatNum(stats.textureCount) },
@@ -1053,6 +1111,10 @@ function ModelStats({ obj }) {
           fontSize: 11, fontWeight: 600,
         }}>⚠ 폴리곤 예산 초과 주의 (100k+)</div>
       )}
+
+      <div style={{ marginTop: 6, fontSize: 10, color: '#94a3b8', lineHeight: 1.4 }}>
+        엔진 렌더 기준 — 삼각형은 tris, 버텍스는 위치 기준(모델링 툴의 면/버텍스 수와 다를 수 있어요).
+      </div>
     </div>
   )
 }
@@ -1321,7 +1383,7 @@ export default function AssetViewer360({
             position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
             background: 'rgba(109,40,217,0.85)', color: '#fff', fontSize: 12, fontWeight: 600,
             padding: '4px 12px', borderRadius: 99, pointerEvents: 'none',
-          }}>🔦 드래그해서 조명 이동</div>
+          }}>☀️ 아무 곳이나 드래그해 태양(빛)을 움직이세요</div>
         </div>
       )}
 
