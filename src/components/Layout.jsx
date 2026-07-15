@@ -38,6 +38,7 @@ export default function Layout() {
               <Link to="/assets" className={navCls('/assets')}>에셋</Link>
               <Link to="/requests" className={navCls('/requests')}>요청 게시판</Link>
               <Link to="/directory" className={navCls('/directory')}>크리에이터</Link>
+              <Link to="/hall" className={navCls('/hall')}>🏆 명예의 전당</Link>
             </nav>
           )}
 
