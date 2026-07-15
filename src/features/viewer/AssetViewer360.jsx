@@ -637,6 +637,8 @@ function MaterialLab({
   partSelect, onTogglePartSelect, selectedMesh, onClearSelection,
 }) {
   const [open, setOpen] = useState(true)
+  const texInputRef = useRef(null)
+  const [customMapName, setCustomMapName] = useState(null)  // 첨부한 텍스처 파일명(표시/제거용)
 
   if (!root) return null
 
@@ -650,6 +652,25 @@ function MaterialLab({
       console.warn('[MaterialLab] applyMaterialConfig 실패:', e)
     }
   }
+
+  // 이미지 파일을 텍스처로 로드해 재질 표면(albedo)에 바로 적용.
+  const attachTexture = (file) => {
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    new THREE.TextureLoader().load(
+      url,
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.wrapS = THREE.RepeatWrapping
+        tex.wrapT = THREE.RepeatWrapping
+        apply({ customMap: tex })
+        setCustomMapName(file.name)
+      },
+      undefined,
+      () => { try { URL.revokeObjectURL(url) } catch { /* 무시 */ } },
+    )
+  }
+  const clearTexture = () => { apply({ customMap: null }); setCustomMapName(null) }
 
   const pickBase = (preset) => {
     try {
@@ -743,6 +764,29 @@ function MaterialLab({
               fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
             }}
           >💾 변형본 .glb 다운로드</button>
+
+          {/* 이미지 첨부 — 내 텍스처 이미지를 재질 표면(albedo)에 바로 적용해 확인. */}
+          <input ref={texInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={e => { attachTexture(e.target.files?.[0]); e.target.value = '' }} />
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <button type="button"
+              onClick={() => texInputRef.current?.click()}
+              title="내 이미지를 재질 표면(albedo)으로 바로 적용"
+              style={{
+                flex: '1 1 auto', padding: '5px 8px', borderRadius: 8, border: '1px solid #86efac',
+                background: '#f0fdf4', color: '#15803d', cursor: 'pointer',
+                fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}
+            >🖼️ {customMapName ? `이미지: ${customMapName}` : '이미지 첨부(텍스처)'}</button>
+            {customMapName && (
+              <button type="button" onClick={clearTexture} title="첨부 이미지 제거"
+                style={{
+                  padding: '5px 7px', borderRadius: 8, border: '1px solid #e2e8f0',
+                  background: '#fff', color: '#64748b', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                }}
+              >✕</button>
+            )}
+          </div>
 
           {/* 표면 질감 */}
           <div style={sectionTitle}>표면 질감</div>

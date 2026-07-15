@@ -225,7 +225,7 @@ export const DEFAULT_CONFIG = {
   ior: 1.5,
   iridescence: 0.0,
   surfaceId: 'none',
-  surfaceStrength: 0.6,
+  surfaceStrength: 0.85,
 }
 
 // ── 3) 머티리얼 생성 ──────────────────────────────────────────────────
@@ -250,6 +250,12 @@ export function buildMaterial(config = {}) {
       roughness: num(cfg.roughness, 0.7),
     })
 
+    // 사용자가 첨부한 이미지 → albedo(map). 색은 흰색으로 해 맵 색을 그대로 보여준다.
+    if (cfg.customMap && cfg.customMap.isTexture) {
+      material.map = cfg.customMap
+      material.color = new THREE.Color(0xffffff)
+    }
+
     // 클리어코트(맑은 광택 코팅층).
     const clearcoat = num(cfg.clearcoat, 0)
     if (clearcoat > 0) {
@@ -268,7 +274,8 @@ export function buildMaterial(config = {}) {
     const surface = getSurfaceTexture(cfg.surfaceId, num(cfg.surfaceStrength, 0.6))
     if (surface) {
       material.bumpMap = surface
-      material.bumpScale = 0.02 + num(cfg.surfaceStrength, 0.6) * 0.25
+      // 강도를 크게 키운다(기존 최대 0.27은 너무 약했음). 최대 ~1.4.
+      material.bumpScale = 0.1 + num(cfg.surfaceStrength, 0.6) * 1.3
     }
 
     // 발광(emissive).
