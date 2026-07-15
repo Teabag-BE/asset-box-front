@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { requestApi } from '../api/requestApi'
 
@@ -9,6 +9,8 @@ export default function CreateRequestPage() {
   const [form, setForm] = useState({
     title: '', content: '', assetType: '', preferredStyle: '', engine: '', deadline: '',
   })
+  const [references, setReferences] = useState([])   // 참조 이미지(선택, 여러 장)
+  const fileRef = useRef(null)                        // 숨긴 file input 참조(버튼으로 클릭)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -29,6 +31,9 @@ export default function CreateRequestPage() {
         engine: form.engine || null,
         // datetime-local("2026-06-20T10:00") → 초 보강
         deadline: form.deadline ? `${form.deadline}:00` : null,
+        references,
+        // 첫 참조 이미지를 요청 썸네일로도 사용 → 목록 카드에 이미지가 뜨게 한다(별도 썸네일 입력 없음).
+        thumbnail: references[0],
       })
       navigate(created?.id ? `/requests/${created.id}` : '/requests')
     } catch (err) {
@@ -70,6 +75,19 @@ export default function CreateRequestPage() {
             <span className="text-slate-600">마감 (선택)</span>
             <input name="deadline" type="datetime-local" value={form.deadline} onChange={onChange} className={inputCls} />
           </label>
+        </div>
+        {/* 스타일된 버튼으로 숨긴 file input 을 클릭 — 맨 <input type=file> 이 회색/미클릭되던 문제 회피(에셋 업로드와 동일 패턴). */}
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-slate-600">참조 이미지 <span className="text-slate-400">(선택, 여러 장 가능)</span></span>
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+            onChange={e => setReferences(Array.from(e.target.files ?? []))} />
+          <button type="button" onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center gap-2 self-start rounded-lg border border-[#C9CAAC] bg-linen-50 px-3 py-2 text-sm text-[#4b5d45] hover:bg-linen-100 transition-colors">
+            📎 이미지 선택{references.length > 0 ? ` (${references.length})` : ''}
+          </button>
+          {references.length > 0 && (
+            <span className="text-xs text-slate-400">{references.map(f => f.name).join(', ')}</span>
+          )}
         </div>
         <button type="submit" disabled={loading}
           className="mt-1 w-full bg-[#869B7E] disabled:bg-[#a9b8a3] text-white rounded-lg py-2.5 font-semibold hover:bg-[#6b7d64] transition-colors">

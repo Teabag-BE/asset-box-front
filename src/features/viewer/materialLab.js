@@ -184,6 +184,58 @@ export function getSurfaceTexture(id, strength = 0.6) {
   }
 }
 
+// 표면 높이 패턴(회색조)을 노멀맵으로 변환한다.
+// glTF(.glb)는 bumpMap 을 지원하지 않으므로, 표면 질감을 노멀맵으로 만들면 라이브에서도
+// 보이고 '변형본 .glb 다운로드'에도 함께 포함된다. (id, strength) 별 캐시.
+const normalCache = new Map()
+
+// 패턴별 타일링(반복) 횟수 — 클수록 요철이 잘게(작게) 보인다. 도트가 너무 커서 특히 촘촘히.
+const SURFACE_REPEAT = { noise: 5, brushed: 4, leather: 5, dots: 8, waves: 4 }
+
+export function getSurfaceNormalTexture(id, strength = 0.85) {
+  try {
+    if (!id || id === 'none') return null
+    const q = Math.round(Math.max(0, Math.min(1, strength)) * 100) / 100
+    const key = `${id}:${q}`
+    if (normalCache.has(key)) return normalCache.get(key)
+
+    const height = getSurfaceTexture(id, q)          // 회색조 높이 CanvasTexture
+    const src = height && height.image
+    if (!src || !src.width) return null
+    const w = src.width, h = src.height
+    const data = src.getContext('2d').getImageData(0, 0, w, h).data
+    const out = document.createElement('canvas'); out.width = w; out.height = h
+    const octx = out.getContext('2d')
+    const img = octx.createImageData(w, h)
+    const H = (x, y) => data[(((y % h + h) % h) * w + ((x % w + w) % w)) * 4] / 255
+    const s = 3.0                                     // Sobel 세기(노멀 기울기)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const dx = (H(x - 1, y) - H(x + 1, y)) * s
+        const dy = (H(x, y - 1) - H(x, y + 1)) * s
+        const len = Math.hypot(dx, dy, 1) || 1
+        const i = (y * w + x) * 4
+        img.data[i]     = (dx / len * 0.5 + 0.5) * 255
+        img.data[i + 1] = (dy / len * 0.5 + 0.5) * 255
+        img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255
+        img.data[i + 3] = 255
+      }
+    }
+    octx.putImageData(img, 0, 0)
+    const tex = new THREE.CanvasTexture(out)
+    tex.wrapS = THREE.RepeatWrapping
+    tex.wrapT = THREE.RepeatWrapping
+    // 패턴을 더 잘게(자잘하게) — 타일링을 늘려 요철 하나하나를 작게 만든다. 도트는 특히 촘촘히.
+    const r = SURFACE_REPEAT[id] ?? 4
+    tex.repeat.set(r, r)
+    normalCache.set(key, tex)
+    return tex
+  } catch (e) {
+    console.warn('[materialLab] getSurfaceNormalTexture 실패:', e)
+    return null
+  }
+}
+
 // UI 노출용 표면 질감 목록. make(strength) 로 텍스처 생성(캐시 경유).
 export const SURFACE_TEXTURES = [
   { id: 'none', label: '없음', make: () => null },
@@ -208,7 +260,7 @@ export const BASE_PRESETS = [
   { id: 'plastic',  label: '플라스틱',   params: { color: '#3b82f6', metalness: 0.0, roughness: 0.4,  clearcoat: 0.5, transmission: 0.0 } },
   { id: 'rubber',   label: '고무',      params: { color: '#2a2a2e', metalness: 0.0, roughness: 0.95, clearcoat: 0.0, transmission: 0.0 } },
   { id: 'ceramic',  label: '세라믹',     params: { color: '#f5f0e8', metalness: 0.0, roughness: 0.25, clearcoat: 0.6, transmission: 0.0 } },
-  { id: 'glass',    label: '유리',      params: { color: '#eaf4ff', metalness: 0.0, roughness: 0.05, clearcoat: 0.0, transmission: 0.95, ior: 1.5 } },
+  { id: 'glass',    label: '유리',      params: { color: '#ffffff', metalness: 0.0, roughness: 0.02, clearcoat: 0.0, transmission: 1.0, ior: 1.5 } },
   { id: 'clay',     label: '클레이',     params: { color: '#cfcccc', metalness: 0.05, roughness: 0.7, clearcoat: 0.0, transmission: 0.0 } },
 ]
 
@@ -225,7 +277,7 @@ export const DEFAULT_CONFIG = {
   ior: 1.5,
   iridescence: 0.0,
   surfaceId: 'none',
-  surfaceStrength: 0.6,
+  surfaceStrength: 0.85,
 }
 
 // ── 3) 머티리얼 생성 ──────────────────────────────────────────────────
@@ -250,6 +302,12 @@ export function buildMaterial(config = {}) {
       roughness: num(cfg.roughness, 0.7),
     })
 
+    // 사용자가 첨부한 이미지 → albedo(map). 색은 흰색으로 해 맵 색을 그대로 보여준다.
+    if (cfg.customMap && cfg.customMap.isTexture) {
+      material.map = cfg.customMap
+      material.color = new THREE.Color(0xffffff)
+    }
+
     // 클리어코트(맑은 광택 코팅층).
     const clearcoat = num(cfg.clearcoat, 0)
     if (clearcoat > 0) {
@@ -264,11 +322,14 @@ export function buildMaterial(config = {}) {
       material.iridescenceIOR = 1.3
     }
 
-    // 표면 질감 → bumpMap.
-    const surface = getSurfaceTexture(cfg.surfaceId, num(cfg.surfaceStrength, 0.6))
-    if (surface) {
-      material.bumpMap = surface
-      material.bumpScale = 0.02 + num(cfg.surfaceStrength, 0.6) * 0.25
+    // 표면 질감 → normalMap. (bumpMap 은 glTF 로 내보내지 못하므로 노멀맵을 쓴다:
+    // 라이브에서도 보이고 '변형본 .glb 다운로드'에도 함께 포함된다.)
+    const s = num(cfg.surfaceStrength, 0.85)
+    const surfaceNormal = getSurfaceNormalTexture(cfg.surfaceId, s)
+    if (surfaceNormal) {
+      material.normalMap = surfaceNormal
+      const sc = 0.4 + s * 2.6   // 강도(최대 ~3.0) — 이전보다 더 세게.
+      material.normalScale = new THREE.Vector2(sc, sc)
     }
 
     // 발광(emissive).
@@ -278,16 +339,22 @@ export function buildMaterial(config = {}) {
       material.emissiveIntensity = emissiveIntensity
     }
 
-    // 투명/유리(transmission).
+    // 투명/유리(transmission). 실제 유리처럼 보이도록 굴절·반사·감쇠를 함께 세팅.
     const transmission = num(cfg.transmission, 0)
     if (transmission > 0) {
       material.transmission = transmission
       material.transparent = true
+      material.metalness = 0            // 유리는 비금속(금속성이 섞이면 탁해진다)
       material.ior = num(cfg.ior, 1.5)
       // thickness(유리 두께)는 굴절 세기를 좌우한다. 고정값이면 큰 모델은 굴절이 약하고
       // 작은 모델은 과하게 왜곡돼서, 적용하는 메시 크기에 맞춰 _thickness 를 넘겨받는다(applyToMesh).
-      material.thickness = num(cfg._thickness, 0.5)
-      material.envMapIntensity = 1.2   // 유리 반사가 살짝 더 또렷하게
+      const thickness = num(cfg._thickness, 0.5)
+      material.thickness = thickness
+      material.specularIntensity = 1.0  // 표면 프레넬 반사를 또렷하게 — 유리 특유의 하이라이트
+      material.envMapIntensity = 1.5     // 환경 반사 강조(HDR/스튜디오가 유리에 비쳐야 유리다움)
+      // 감쇠: 빛이 두께를 지날수록 아주 옅게 색이 물들어 깊이감을 준다(얇은 곳은 맑게 유지).
+      material.attenuationColor = new THREE.Color('#eaf6ff')
+      material.attenuationDistance = Math.max(thickness * 5, 0.5)
     }
 
     // 반투명(opacity) — transmission 과 별개로 알파 투명.
@@ -308,14 +375,14 @@ export function buildMaterial(config = {}) {
 
 // ── 4) 적용 / 복원 ────────────────────────────────────────────────────
 
-// 원본 머티리얼을 mesh.userData 에 1회 보관(실험실 전용 키).
-// 이미 기존 autoFix/neutralize 가 assetboxOriginalMaterial 에 보관해 두었으면
-// 그걸 훼손하지 않도록 별도 키를 쓴다. 없으면 현재 material 을 최초 1회 저장.
+// 실험실에 처음 손대기 직전(= 화면에 보이던 상태)의 재질을 1회 보관(실험실 전용 키).
+// 주의: autoFix 가 텍스처를 입혀 둔 모델은 assetboxOriginalMaterial 에 'autoFix 이전의
+// 맵 없는 원본'이 들어있다. 실험실의 '오리지널'은 사용자가 보던 화면(=텍스처 입은 재질)으로
+// 돌아가야 하므로, 그 키를 쓰지 않고 반드시 '현재 mesh.material' 을 저장한다.
+// (예전엔 assetboxOriginalMaterial 을 우선 사용해서, 복원 시 텍스처가 사라지는 버그가 있었다.)
 function stashLabOriginal(mesh) {
   if (mesh.userData.assetboxLabOriginal === undefined) {
-    mesh.userData.assetboxLabOriginal = mesh.userData.assetboxOriginalMaterial !== undefined
-      ? mesh.userData.assetboxOriginalMaterial
-      : mesh.material
+    mesh.userData.assetboxLabOriginal = mesh.material
   }
 }
 

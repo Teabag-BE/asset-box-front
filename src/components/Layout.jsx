@@ -38,8 +38,12 @@ export default function Layout() {
               <Link to="/assets" className={navCls('/assets')}>에셋</Link>
               <Link to="/requests" className={navCls('/requests')}>요청 게시판</Link>
               <Link to="/directory" className={navCls('/directory')}>크리에이터</Link>
+              <Link to="/hall" className={navCls('/hall')}>🏆 명예의 전당</Link>
             </nav>
           )}
+
+          {/* 미니게임 오락실 — 누구나 접근 (대기 중 플레이) */}
+          <Link to="/games" className={`${navCls('/games')} shrink-0`}>🎮 게임</Link>
 
           {user && (
             <form className="hidden md:block flex-1 max-w-xs"

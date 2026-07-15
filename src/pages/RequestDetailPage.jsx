@@ -5,7 +5,9 @@ import { useAuth } from '../auth/AuthContext'
 import { STATUS, STATUS_FLOW, StatusBadge } from '../features/request/requestStatus'
 import Spinner from '../components/Spinner'
 import Button from '../components/Button'
+import UserName from '../components/UserName'
 import CommentSection from '../features/post/CommentSection'
+import { formatDateTime } from '../utils/timeAgo'
 
 function Field({ label, value }) {
   if (!value) return null
@@ -98,7 +100,7 @@ export default function RequestDetailPage() {
             {req.referenceImages?.length > 0 && (
               <div className="grid grid-cols-3 gap-2 mt-5">
                 {req.referenceImages.map((img, i) => (
-                  <img key={i} src={img.url ?? img.presignedUrl} alt={`reference ${i + 1}`}
+                  <img key={i} src={img.accessUrl ?? img.url ?? img.presignedUrl} alt={`reference ${i + 1}`}
                     className="w-full aspect-square object-cover rounded-lg border border-linen-200" />
                 ))}
               </div>
@@ -129,11 +131,15 @@ export default function RequestDetailPage() {
           <div className="bg-white border border-[#C9CAAC]/40 rounded-2xl p-5 space-y-3">
             <div>
               <p className="text-xs text-slate-400 mb-0.5">요청자</p>
-              <p className="text-sm font-medium text-slate-800">#{req.requesterId}</p>
+              <p className="text-sm font-medium text-slate-800"><UserName id={req.requesterId} /></p>
             </div>
             <div>
               <p className="text-xs text-slate-400 mb-0.5">담당 제작자</p>
-              <p className="text-sm font-medium text-slate-800">{req.assigneeId ? `#${req.assigneeId}` : '미배정'}</p>
+              <p className="text-sm font-medium text-slate-800">{req.assigneeId ? <UserName id={req.assigneeId} /> : '미배정'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 mb-0.5">요청 시각</p>
+              <p className="text-sm font-medium text-slate-800">{formatDateTime(req.createdAt)}</p>
             </div>
             {!isMine && (
               <Button variant="secondary" size="sm" className="w-full justify-center"

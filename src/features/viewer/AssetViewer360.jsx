@@ -9,7 +9,31 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import * as THREE from 'three'
+
+// 실험실에서 바꾼 재질이 반영된 현재 모델(root)을 .glb 로 내보내 다운로드한다.
+function downloadModifiedGlb(root, onError) {
+  try {
+    new GLTFExporter().parse(
+      root,
+      (result) => {
+        const blob = new Blob([result], { type: 'model/gltf-binary' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'assetbox-custom.glb'
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      },
+      (err) => { console.warn('[GLB export] 실패:', err); onError?.() },
+      { binary: true },
+    )
+  } catch (e) {
+    console.warn('[GLB export] 예외:', e)
+    onError?.()
+  }
+}
 import {
   autoFixMaterials,
   neutralizeEmptyMaterials,
@@ -242,16 +266,26 @@ function LightingRig({ preset = 'studio' }) {
   )
 }
 
+// 환경맵 로더. .hdr(RGBELoader) / .exr(EXRLoader) / 등장방형 이미지(.jpg .png .webp, TextureLoader) 지원.
+// 로컬 드래그앤드롭 파일(blob URL)도 동일 경로로 처리된다.
+const IMAGE_ENV_EXTS = ['jpg', 'jpeg', 'png', 'webp']
+
 function HdrEnvironment({ url, extension }) {
   const { scene, gl } = useThree()
 
   useEffect(() => {
-    const loader = extension === 'exr' ? new EXRLoader() : new RGBELoader()
+    const isExr = extension === 'exr'
+    const isImage = IMAGE_ENV_EXTS.includes(extension)
+    const loader = isExr ? new EXRLoader() : isImage ? new THREE.TextureLoader() : new RGBELoader()
     let envMap = null
+    let disposed = false
 
     loader.load(
       url,
       (texture) => {
+        if (disposed) { texture.dispose?.(); return }
+        // LDR 이미지는 sRGB 로 읽어야 색이 정상. HDR/EXR 은 선형이라 그대로 둔다.
+        if (isImage) texture.colorSpace = THREE.SRGBColorSpace
         texture.mapping = THREE.EquirectangularReflectionMapping
         scene.background = texture
 
@@ -266,6 +300,7 @@ function HdrEnvironment({ url, extension }) {
     )
 
     return () => {
+      disposed = true
       scene.environment = null
       scene.background = null
       if (envMap) envMap.dispose()
@@ -538,7 +573,7 @@ function ModelLoader({ url, extension, textureUrls, wireframe, onLoaded, onLight
 
 function ViewerControls({ autoRotate, wireframe, capturing, onToggleRotate, onToggleWireframe, onReset, onCapture }) {
   const btn = (active, onClick, label, title, extra = '') => (
-    <button onClick={onClick} title={title} style={{
+    <button type="button" onClick={onClick} title={title} style={{
       padding: '4px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 14,
       background: active ? '#ede9fe' : 'transparent',
       color: active ? '#6d28d9' : extra === 'danger' ? '#ef4444' : '#475569',
@@ -577,7 +612,7 @@ function LightingPicker({ value, onChange }) {
       {LIGHTING_OPTIONS.map(opt => {
         const active = value === opt.id
         return (
-          <button
+          <button type="button"
             key={opt.id}
             onClick={() => onChange(opt.id)}
             title={opt.title}
@@ -602,6 +637,8 @@ function MaterialLab({
   partSelect, onTogglePartSelect, selectedMesh, onClearSelection,
 }) {
   const [open, setOpen] = useState(true)
+  const texInputRef = useRef(null)
+  const [customMapName, setCustomMapName] = useState(null)  // 첨부한 텍스처 파일명(표시/제거용)
 
   if (!root) return null
 
@@ -615,6 +652,25 @@ function MaterialLab({
       console.warn('[MaterialLab] applyMaterialConfig 실패:', e)
     }
   }
+
+  // 이미지 파일을 텍스처로 로드해 재질 표면(albedo)에 바로 적용.
+  const attachTexture = (file) => {
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    new THREE.TextureLoader().load(
+      url,
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.wrapS = THREE.RepeatWrapping
+        tex.wrapT = THREE.RepeatWrapping
+        apply({ customMap: tex })
+        setCustomMapName(file.name)
+      },
+      undefined,
+      () => { try { URL.revokeObjectURL(url) } catch { /* 무시 */ } },
+    )
+  }
+  const clearTexture = () => { apply({ customMap: null }); setCustomMapName(null) }
 
   const pickBase = (preset) => {
     try {
@@ -642,7 +698,7 @@ function MaterialLab({
   }
 
   const chip = (active, onClick, label, key) => (
-    <button key={key} onClick={onClick} style={{
+    <button type="button" key={key} onClick={onClick} style={{
       padding: '3px 8px', borderRadius: 6,
       border: active ? '1px solid #6d28d9' : '1px solid #e2e8f0',
       cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap',
@@ -671,7 +727,7 @@ function MaterialLab({
       display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
       pointerEvents: 'none',
     }}>
-      <button
+      <button type="button"
         onClick={() => setOpen(v => !v)}
         title="머티리얼 실험실"
         style={{
@@ -696,6 +752,40 @@ function MaterialLab({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {chip(false, handleRestore, '↺ 오리지널', '__original__')}
             {BASE_PRESETS.map(p => chip(false, () => pickBase(p), p.label, p.id))}
+          </div>
+
+          {/* 변형본 다운로드 — 실험실에서 바꾼 재질 그대로 .glb 로 내보낸다. */}
+          <button type="button"
+            onClick={() => downloadModifiedGlb(root)}
+            title="지금 화면의 재질/색이 반영된 모델을 .glb 로 저장"
+            style={{
+              padding: '5px 8px', borderRadius: 8, border: '1px solid #c4b5fd',
+              background: '#f5f3ff', color: '#6d28d9', cursor: 'pointer',
+              fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+            }}
+          >💾 변형본 .glb 다운로드</button>
+
+          {/* 이미지 첨부 — 내 텍스처 이미지를 재질 표면(albedo)에 바로 적용해 확인. */}
+          <input ref={texInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={e => { attachTexture(e.target.files?.[0]); e.target.value = '' }} />
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <button type="button"
+              onClick={() => texInputRef.current?.click()}
+              title="내 이미지를 재질 표면(albedo)으로 바로 적용"
+              style={{
+                flex: '1 1 auto', padding: '5px 8px', borderRadius: 8, border: '1px solid #86efac',
+                background: '#f0fdf4', color: '#15803d', cursor: 'pointer',
+                fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}
+            >🖼️ {customMapName ? `이미지: ${customMapName}` : '이미지 첨부(텍스처)'}</button>
+            {customMapName && (
+              <button type="button" onClick={clearTexture} title="첨부 이미지 제거"
+                style={{
+                  padding: '5px 7px', borderRadius: 8, border: '1px solid #e2e8f0',
+                  background: '#fff', color: '#64748b', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                }}
+              >✕</button>
+            )}
           </div>
 
           {/* 표면 질감 */}
@@ -750,7 +840,7 @@ function MaterialLab({
           )}
 
           {/* 원본 복원 */}
-          <button
+          <button type="button"
             onClick={handleRestore}
             style={{
               marginTop: 2, padding: '5px 8px', borderRadius: 6, border: '1px solid #e2e8f0',
@@ -786,11 +876,17 @@ function MovableKeyLight({ angle, active }) {
   return (
     <>
       {/* 강한 키라이트 — 기본 target 이 원점(0,0,0)이라 그대로 모델을 비춘다. */}
-      <directionalLight position={position} intensity={1.8} color={0xfff4e6} castShadow />
-      {/* 광원 위치 시각화용 작은 발광 구 — "빛이 여기 있다"를 보여준다. */}
+      <directionalLight position={position} intensity={2.2} color={0xfff4e6} castShadow />
+      {/* 근처를 은은히 밝혀 '빛 덩어리'가 있다는 느낌을 준다. */}
+      <pointLight position={position} intensity={0.6} distance={22} color={0xfff4e6} />
+      {/* 광원 위치를 크게 시각화 — 밝은 코어 + 반투명 후광으로 '태양'처럼 보이게(직관적). */}
       <mesh position={position}>
-        <sphereGeometry args={[0.25, 16, 16]} />
-        <meshBasicMaterial color={0xfff4e6} />
+        <sphereGeometry args={[0.55, 24, 24]} />
+        <meshBasicMaterial color={0xfff2d6} toneMapped={false} />
+      </mesh>
+      <mesh position={position}>
+        <sphereGeometry args={[1.0, 24, 24]} />
+        <meshBasicMaterial color={0xffe8b0} transparent opacity={0.25} toneMapped={false} depthWrite={false} />
       </mesh>
     </>
   )
@@ -892,7 +988,9 @@ function computeModelStats(obj) {
   if (!obj) return null
   try {
     let triangles = 0
-    let vertices  = 0
+    let vertices  = 0        // 렌더 버텍스(three.js가 노멀/UV 이음새에서 분할 저장)
+    let uniqueVertices = 0   // 유니크 위치 버텍스(모델링 툴의 버텍스 수에 근접)
+    let uniqueCapped = false // 너무 큰 모델은 유니크 계산을 생략
     let meshCount = 0
     const materials = new Set()
     const textures  = new Set()
@@ -903,7 +1001,21 @@ function computeModelStats(obj) {
 
       const geo = node.geometry
       const pos = geo.attributes && geo.attributes.position
-      if (pos) vertices += pos.count
+      if (pos) {
+        vertices += pos.count
+        // 위치가 같으면(노멀/UV 때문에 쪼개졌어도) 하나로 세서 Blender 등 모델링 툴 수치에 맞춘다.
+        // 대형 모델(50만+)은 성능상 생략하고 렌더 버텍스로 대체.
+        if (pos.count <= 500000) {
+          const a = pos.array
+          const meshSet = new Set()
+          for (let i = 0; i < pos.count; i++) {
+            meshSet.add(`${Math.round(a[i * 3] * 1e4)},${Math.round(a[i * 3 + 1] * 1e4)},${Math.round(a[i * 3 + 2] * 1e4)}`)
+          }
+          uniqueVertices += meshSet.size
+        } else {
+          uniqueCapped = true
+        }
+      }
       if (geo.index) triangles += geo.index.count / 3
       else if (pos) triangles += pos.count / 3
 
@@ -939,6 +1051,7 @@ function computeModelStats(obj) {
     return {
       triangles: Math.round(triangles),
       vertices,
+      uniqueVertices: uniqueCapped ? null : uniqueVertices,
       meshCount,
       materialCount: materials.size,
       textureCount: textures.size,
@@ -963,7 +1076,7 @@ function ModelStats({ obj }) {
 
   const rows = [
     { label: '삼각형', value: formatNum(stats.triangles), emphasize: true },
-    { label: '버텍스', value: formatNum(stats.vertices) },
+    { label: '버텍스', value: formatNum(stats.uniqueVertices ?? stats.vertices) },
     { label: '메시', value: formatNum(stats.meshCount) },
     { label: '머티리얼', value: formatNum(stats.materialCount) },
     { label: '텍스처', value: formatNum(stats.textureCount) },
@@ -978,7 +1091,7 @@ function ModelStats({ obj }) {
 
   if (!open) {
     return (
-      <button
+      <button type="button"
         onClick={() => setOpen(true)}
         title="모델 스탯 — 폴리 예산 보기"
         style={{
@@ -1005,7 +1118,7 @@ function ModelStats({ obj }) {
         marginBottom: 8,
       }}>
         <span style={{ fontWeight: 700, color: '#6d28d9' }}>📊 모델 스탯</span>
-        <button
+        <button type="button"
           onClick={() => setOpen(false)}
           title="접기"
           style={{
@@ -1042,6 +1155,10 @@ function ModelStats({ obj }) {
           fontSize: 11, fontWeight: 600,
         }}>⚠ 폴리곤 예산 초과 주의 (100k+)</div>
       )}
+
+      <div style={{ marginTop: 6, fontSize: 10, color: '#94a3b8', lineHeight: 1.4 }}>
+        엔진 렌더 기준 — 삼각형은 tris, 버텍스는 위치 기준(모델링 툴의 면/버텍스 수와 다를 수 있어요).
+      </div>
     </div>
   )
 }
@@ -1064,10 +1181,75 @@ export default function AssetViewer360({
   const [labConfig, setLabConfig]   = useState({ ...DEFAULT_CONFIG })  // 실험실 재질 config
   const [partSelect, setPartSelect] = useState(false)  // 파트 선택 모드 on/off
   const [selectedMesh, setSelectedMesh] = useState(null)  // 선택된 파트(THREE.Mesh|null)
+  const [customEnv, setCustomEnv] = useState(null)  // 로컬 드롭 환경맵 { url, extension, name } | null
+  const [envDragging, setEnvDragging] = useState(false)  // 환경맵 파일 드래그 중(오버레이 표시용)
   const controlsRef = useRef()
   const dragRef = useRef(null)  // 드래그 시작점 { x, y, az, el }
+  const envFileInputRef = useRef(null)  // 환경맵 파일 선택 input
+  const customEnvUrlRef = useRef(null)  // 현재 커스텀 환경맵 blob URL(언마운트 정리용, 항상 최신값 유지)
 
   const ext = fileExtension?.toLowerCase()
+
+  const ENV_EXTS = ['hdr', 'exr', 'jpg', 'jpeg', 'png', 'webp']
+
+  // 로컬 환경맵 파일을 blob URL 로 적용. 이전 blob URL 은 정리한다.
+  function applyEnvFile(file) {
+    if (!file) return false
+    const name = file.name || 'env'
+    const dot = name.lastIndexOf('.')
+    const fileExt = dot >= 0 ? name.slice(dot + 1).toLowerCase() : ''
+    if (!ENV_EXTS.includes(fileExt)) return false
+    const url = URL.createObjectURL(file)
+    customEnvUrlRef.current = url
+    setCustomEnv(prev => {
+      if (prev?.url) { try { URL.revokeObjectURL(prev.url) } catch { /* 무시 */ } }
+      return { url, extension: fileExt, name }
+    })
+    return true
+  }
+
+  function clearCustomEnv() {
+    customEnvUrlRef.current = null
+    setCustomEnv(prev => {
+      if (prev?.url) { try { URL.revokeObjectURL(prev.url) } catch { /* 무시 */ } }
+      return null
+    })
+  }
+
+  // 드래그된 것이 "파일"인지 확인. types 는 최신 브라우저에선 배열, 구형에선 DOMStringList 라
+  // Array.from 으로 통일해서 검사한다.
+  function isFileDrag(e) {
+    const types = e.dataTransfer?.types
+    return !!types && Array.from(types).includes('Files')
+  }
+
+  // 드래그앤드롭: 뷰어 위에 환경맵 파일을 떨구면 즉시 적용.
+  function handleEnvDragOver(e) {
+    // 파일 드래그일 때만 관여(모델 파트 클릭/조명 드래그 등과 무관).
+    if (isFileDrag(e)) {
+      e.preventDefault()
+      if (!envDragging) setEnvDragging(true)
+    }
+  }
+  function handleEnvDragLeave(e) {
+    // 컨테이너 밖으로 나갈 때만 해제(자식 위로 이동하는 leave 는 무시).
+    if (e.currentTarget.contains(e.relatedTarget)) return
+    setEnvDragging(false)
+  }
+  function handleEnvDrop(e) {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    setEnvDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    applyEnvFile(file)
+  }
+
+  // 언마운트 시 남은 환경맵 blob URL 정리(ref 로 항상 최신 URL 을 읽는다).
+  useEffect(() => {
+    return () => {
+      if (customEnvUrlRef.current) { try { URL.revokeObjectURL(customEnvUrlRef.current) } catch { /* 무시 */ } }
+    }
+  }, [])
 
   function handleLoaded(obj) {
     setLoadedObj(obj)
@@ -1134,7 +1316,13 @@ export default function AssetViewer360({
   }
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }} className={className}>
+    <div
+      style={{ position: 'relative', width: '100%', height: '100%' }}
+      className={className}
+      onDragOver={handleEnvDragOver}
+      onDragLeave={handleEnvDragLeave}
+      onDrop={handleEnvDrop}
+    >
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
 
       {capturing && (
@@ -1143,6 +1331,21 @@ export default function AssetViewer360({
           background: 'rgba(239,68,68,0.9)', color: '#fff', fontSize: 12, fontWeight: 600,
           padding: '4px 12px', borderRadius: 99, zIndex: 10, pointerEvents: 'none'
         }}>● REC 6초 회전 캡처 중</div>
+      )}
+
+      {/* 환경맵 드롭 오버레이 — 파일 드래그 중에만 표시. pointerEvents:none 이라 드롭은 컨테이너가 받는다. */}
+      {envDragging && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 20, pointerEvents: 'none',
+          borderRadius: 12, border: '2px dashed #869B7E',
+          background: 'rgba(134,155,126,0.14)', backdropFilter: 'blur(1px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          color: '#3f5238', fontWeight: 700, gap: 6,
+        }}>
+          <span style={{ fontSize: 34 }}>🌅</span>
+          <span style={{ fontSize: 14 }}>환경맵을 여기에 놓으세요</span>
+          <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>.hdr · .exr · .jpg · .png (등장방형)</span>
+        </div>
       )}
 
       <ErrorBoundary fallback={<ViewerFallback thumbnailUrl={thumbnailUrl} modelUrl={modelUrl} message="3D 미리보기 로딩에 실패했습니다" />}>
@@ -1159,14 +1362,16 @@ export default function AssetViewer360({
           {/* 마우스로 끌어 이동하는 인터랙티브 키라이트(조명 이동 모드일 때만) */}
           <MovableKeyLight angle={lightAngle} active={lightMove} />
 
-          {/* 환경맵 우선순위: 에셋 업로드 HDR > '낮' 프리셋 HDR(실제 하늘) > RoomEnvironment.
-              '낮'을 고르면 번들된 실사 HDR(/hdr/day.hdr)이 배경+반사를 담당해 사진처럼 보인다.
-              (6MB라 낮 선택 시에만 로드) '밤'/'스튜디오'는 RoomEnvironment + LightingRig 배경. */}
-          {hdrUrl
-            ? <HdrEnvironment url={hdrUrl} extension={hdrExtension} />
-            : lighting === 'day'
-              ? <HdrEnvironment url="/hdr/day.hdr" extension="hdr" />
-              : <DefaultEnvironment />}
+          {/* 환경맵 우선순위: 로컬 드롭 환경맵 > 에셋 업로드 HDR > '낮' 프리셋 HDR(실제 하늘) > RoomEnvironment.
+              드롭한 환경맵이 있으면 그것이 배경+반사를 담당한다.
+              '낮'을 고르면 번들된 실사 HDR(/hdr/day.hdr)이 사진처럼 보인다(6MB라 낮 선택 시에만 로드). */}
+          {customEnv
+            ? <HdrEnvironment url={customEnv.url} extension={customEnv.extension} />
+            : hdrUrl
+              ? <HdrEnvironment url={hdrUrl} extension={hdrExtension} />
+              : lighting === 'day'
+                ? <HdrEnvironment url="/hdr/day.hdr" extension="hdr" />
+                : <DefaultEnvironment />}
 
           <Suspense fallback={<Loader />}>
             <Center>
@@ -1222,7 +1427,7 @@ export default function AssetViewer360({
             position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
             background: 'rgba(109,40,217,0.85)', color: '#fff', fontSize: 12, fontWeight: 600,
             padding: '4px 12px', borderRadius: 99, pointerEvents: 'none',
-          }}>🔦 드래그해서 조명 이동</div>
+          }}>☀️ 아무 곳이나 드래그해 태양(빛)을 움직이세요</div>
         </div>
       )}
 
@@ -1242,7 +1447,7 @@ export default function AssetViewer360({
       <LightingPicker value={lighting} onChange={setLighting} />
 
       {/* 조명 이동 토글 버튼 — LightingPicker(좌하단 bottom 12) 바로 위. zIndex 10 로 오버레이보다 위. */}
-      <button
+      <button type="button"
         onClick={() => setLightMove(v => {
           const next = !v
           // 조명 이동을 켜면 파트 선택을 끈다(상호 배타, 클릭 충돌 방지).
@@ -1259,6 +1464,40 @@ export default function AssetViewer360({
           backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
         }}
       >🔦 조명 이동{lightMove ? ' ON' : ''}</button>
+
+      {/* 환경맵 불러오기 — 조명 이동 버튼(bottom 52) 위. 드래그앤드롭 대체 수단 + 현재 커스텀 환경맵 표시/해제. */}
+      <input
+        ref={envFileInputRef}
+        type="file"
+        accept=".hdr,.exr,.jpg,.jpeg,.png,.webp,image/*"
+        style={{ display: 'none' }}
+        onChange={e => { applyEnvFile(e.target.files?.[0]); e.target.value = '' }}
+      />
+      <div style={{ position: 'absolute', bottom: 92, left: 12, zIndex: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button type="button"
+          onClick={() => envFileInputRef.current?.click()}
+          title={customEnv ? `내 환경맵: ${customEnv.name}` : '환경맵 불러오기 — 또는 .hdr/.exr/.jpg 파일을 뷰어에 끌어다 놓으세요'}
+          style={{
+            padding: '4px 10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+            fontSize: 13, fontWeight: 600,
+            background: customEnv ? '#869B7E' : 'rgba(255,255,255,0.92)',
+            color: customEnv ? '#fff' : '#3f5238',
+            backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+          }}
+        >🌅 {customEnv ? '내 환경맵' : '환경맵'}</button>
+        {customEnv && (
+          <button type="button"
+            onClick={clearCustomEnv}
+            title="환경맵 해제 (프리셋으로 복귀)"
+            style={{
+              padding: '4px 8px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 700, color: '#3f5238',
+              background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(4px)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+            }}
+          >✕</button>
+        )}
+      </div>
 
       {loadedObj && (
         <MaterialLab

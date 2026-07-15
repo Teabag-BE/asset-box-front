@@ -2,16 +2,23 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { requestApi } from '../api/requestApi'
 import { STATUS_TABS, StatusBadge } from '../features/request/requestStatus'
-import { timeAgo } from '../utils/timeAgo'
+import { timeAgo, formatDateTime } from '../utils/timeAgo'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import Spinner from '../components/Spinner'
+import UserName from '../components/UserName'
 
 function RequestCard({ req }) {
   const deadline = req.deadline ? new Date(req.deadline).toLocaleDateString('ko-KR') : null
   return (
     <Link to={`/requests/${req.id}`}
       className="group bg-white rounded-xl border border-[#C9CAAC]/40 shadow-[0_2px_12px_rgba(44,56,41,0.08)] hover:shadow-[0_8px_24px_rgba(44,56,41,0.16)] hover:border-[#869B7E]/60 transition-all p-4 flex flex-col">
+      {/* 참조 이미지(첫 장)를 썸네일로 사용 — 있을 때만 카드 상단에 표시 */}
+      {req.thumbnailUrl && (
+        <div className="-mx-4 -mt-4 mb-3 aspect-video bg-linen-100 overflow-hidden rounded-t-xl">
+          <img src={req.thumbnailUrl} alt={req.title} loading="lazy" className="w-full h-full object-cover" />
+        </div>
+      )}
       <div className="flex items-start justify-between gap-2 mb-2">
         <p className="font-semibold text-slate-800 text-sm group-hover:text-[#556350] line-clamp-1">{req.title}</p>
         <StatusBadge status={req.status} />
@@ -23,10 +30,10 @@ function RequestCard({ req }) {
       </div>
       <p className="text-xs text-slate-500 line-clamp-2 flex-1">{req.content}</p>
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-linen-200 text-xs text-slate-400">
-        <span>요청자 #{req.requesterId}</span>
+        <span>요청자 <UserName id={req.requesterId} /></span>
         <span className="flex items-center gap-2">
-          {req.assigneeId && <span className="text-[#556350]">담당 #{req.assigneeId}</span>}
-          <span>{timeAgo(req.createdAt)}</span>
+          {req.assigneeId && <span className="text-[#556350]">담당 <UserName id={req.assigneeId} /></span>}
+          <span title={formatDateTime(req.createdAt)}>{timeAgo(req.createdAt)}</span>
         </span>
       </div>
     </Link>

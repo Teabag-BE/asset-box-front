@@ -46,6 +46,18 @@ export default function HomePage() {
           </div>
         </>
       )}
+
+      {/* 미니게임 오락실 — 대기 중 즐기기 (로그인 여부 무관) */}
+      <Link to="/games"
+        className="mt-12 flex items-center gap-4 rounded-2xl p-5 bg-gradient-to-r from-sage-100 to-sage-50
+                   border border-sage-200/60 hover:shadow-md transition-shadow">
+        <span className="text-4xl">🕹</span>
+        <div className="flex-1">
+          <p className="font-bold text-slate-800">기다리는 동안 한 판!</p>
+          <p className="text-sm text-slate-500 mt-0.5">에셋을 기다리는 동안 즐기는 미니게임 오락실 — 사이트 안에서 바로 플레이</p>
+        </div>
+        <span className="text-sm font-bold text-[#556350] shrink-0">플레이 →</span>
+      </Link>
     </div>
   )
 }

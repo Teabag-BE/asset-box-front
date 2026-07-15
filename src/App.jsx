@@ -18,7 +18,9 @@ import EditAssetPage from './pages/EditAssetPage'
 import ProfilePage from './pages/ProfilePage'
 import PortfolioPage from './pages/PortfolioPage'
 import DirectoryPage from './pages/DirectoryPage'
+import HallOfFamePage from './pages/HallOfFamePage'
 import SearchResultsPage from './pages/SearchResultsPage'
+import GamesPage from './pages/GamesPage'
 
 export default function App() {
   return (
@@ -29,6 +31,9 @@ export default function App() {
             <Route path="/"       element={<HomePage />} />
             <Route path="/login"  element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
+
+            {/* 미니게임 오락실 (누구나 대기 중 플레이 — 인증 불필요) */}
+            <Route path="/games" element={<GamesPage />} />
 
             {/* 요청 게시판 (백엔드 GET이 인증 필요) */}
             <Route path="/requests"     element={<ProtectedRoute><RequestBoardPage /></ProtectedRoute>} />
@@ -47,6 +52,7 @@ export default function App() {
 
             {/* 크리에이터 디렉토리 / 검색 */}
             <Route path="/directory" element={<ProtectedRoute><DirectoryPage /></ProtectedRoute>} />
+            <Route path="/hall"      element={<ProtectedRoute><HallOfFamePage /></ProtectedRoute>} />
             <Route path="/search"    element={<ProtectedRoute><SearchResultsPage /></ProtectedRoute>} />
 
             {/* 프로필 / 포트폴리오 */}

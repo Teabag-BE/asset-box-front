@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { unzipSync } from 'fflate'
 import { postApi } from '../api/postApi'
 import { aiApi } from '../api/aiApi'
+import { downscaleToDataUrl } from '../utils/imageToDataUrl'
 import Button from '../components/Button'
+import FileDropzone from '../components/FileDropzone'
 import TagInput from '../features/post/TagInput'
 import CategorySelector from '../features/post/CategorySelector'
 import { toAssetZipFile } from '../utils/assetZip'
 import { validateAssetPackage } from '../utils/validateAssetPackage'
-import { downscaleToDataUrl } from '../utils/imageToDataUrl'
 
 // 상세페이지와 동일하게 lazy 로딩 — three.js 뷰어를 메인 번들에서 분리(코드 스플리팅 유지).
 const AssetViewer360 = lazy(() => import('../features/viewer/AssetViewer360'))
@@ -92,24 +93,17 @@ export default function CreateAssetPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // AI 추천 상태.
-  const [aiEnabled, setAiEnabled] = useState(false)          // 서버에 키가 있고 엔드포인트가 살아있을 때만 true
-  const [aiBusy, setAiBusy] = useState(false)
-  const [aiError, setAiError] = useState('')
-  const [aiTags, setAiTags] = useState([])                    // 추천 태그 목록
-  const [aiCategory, setAiCategory] = useState(null)          // { categoryId, categoryPath } | null
-  const [presetCategory, setPresetCategory] = useState(null)  // CategorySelector 로 밀어넣을 categoryId
-
-  // 마운트 시 AI 사용 가능 여부만 조용히 확인. 실패하면 그냥 버튼을 안 그린다.
-  useEffect(() => {
-    let alive = true
-    aiApi.status().then(r => { if (alive) setAiEnabled(r.enabled) })
-    return () => { alive = false }
-  }, [])
-
   // 미리보기 상태.
   const [previewData, setPreviewData] = useState(null)   // { modelUrl, ext, textureUrls } | null
   const [previewStatus, setPreviewStatus] = useState('idle') // 'idle' | 'loading' | 'ready' | 'unavailable'
+  const [showThumbUpload, setShowThumbUpload] = useState(false) // 썸네일 직접 올리기(선택) 펼침 여부
+  // AI 추천 상태 (서버에 OPENAI 키가 있을 때만 활성).
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState('')
+  const [aiTags, setAiTags] = useState([])                    // 추천 태그
+  const [aiCategory, setAiCategory] = useState(null)          // { categoryId, categoryPath } | null
+  const [presetCategory, setPresetCategory] = useState(null)  // CategorySelector 로 밀어넣을 categoryId
   const previewUrlsRef = useRef([])   // revoke 대상 blob URL 목록
   const captureRef = useRef(null)     // AssetViewer360 가 등록한 capture() 함수
 
@@ -176,10 +170,62 @@ export default function CreateAssetPage() {
     }
   }, [])
 
-  function onThumb(e) {
-    const f = e.target.files?.[0]
+  // 마운트 시 AI 사용 가능 여부만 조용히 확인. 서버에 키 없거나 미배포면 버튼 자체를 안 그린다.
+  useEffect(() => {
+    let alive = true
+    aiApi.status().then(r => { if (alive) setAiEnabled(r.enabled) })
+    return () => { alive = false }
+  }, [])
+
+  // AI 추천: 제목 + 파일명 + (있으면)썸네일/미리보기 캡처를 서버로 보내 태그·카테고리를 추천받는다.
+  async function onAiSuggest() {
+    setAiError('')
+    setAiBusy(true)
+    try {
+      const filenames = [assetPackage?.name].filter(Boolean)
+      // 이미 올린 썸네일이 있으면 그걸, 없으면 미리보기 화면을 1회 캡처해 축소본을 첨부.
+      let thumbnailBase64 = null
+      if (thumbnail) {
+        thumbnailBase64 = await downscaleToDataUrl(thumbnail)
+      } else if (previewStatus === 'ready' && typeof captureRef.current === 'function') {
+        const blob = await captureRef.current()
+        if (blob) thumbnailBase64 = await downscaleToDataUrl(blob)
+      }
+      const res = await aiApi.suggest({ title: title.trim(), filenames, thumbnailBase64 })
+      const tags = Array.isArray(res?.tags) ? res.tags : []
+      setAiTags(tags)
+      setAiCategory(res?.categoryId ? { categoryId: res.categoryId, categoryPath: res.categoryPath } : null)
+      if (tags.length === 0 && !res?.categoryId) {
+        setAiError('추천할 만한 게 마땅치 않아요. 제목을 조금 더 구체적으로 적어보세요.')
+      }
+    } catch (err) {
+      setAiError(err.message || 'AI 추천에 실패했어요. 잠시 후 다시 시도해주세요.')
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  // 추천 태그를 TagInput 규칙(소문자·공백→하이픈·최대 10개)에 맞춰 담는다.
+  function addAiTag(raw) {
+    const norm = String(raw).trim().toLowerCase().replace(/\s+/g, '-')
+    setTags(prev => (norm && !prev.includes(norm) && prev.length < 10 ? [...prev, norm] : prev))
+  }
+
+  // 썸네일 파일 선택/드롭 처리. 드롭존과 자동캡처 양쪽에서 재사용.
+  function onThumbFile(f) {
     setThumbnail(f ?? null)
     setPreview(f ? URL.createObjectURL(f) : '')
+  }
+
+  // 3D 에셋 파일 선택/드롭 처리. 드롭은 accept 필터가 안 먹으므로 확장자를 직접 검사해 친절히 안내.
+  function onAssetFile(f) {
+    if (!f) { setAssetPackage(null); return }
+    if (!/\.(glb|fbx|zip)$/i.test(f.name)) {
+      setError(`"${f.name}" 은 지원하지 않는 형식이에요. .glb, .fbx, .zip 파일만 올릴 수 있어요.`)
+      return
+    }
+    setError('')
+    setAssetPackage(f)
   }
 
   // 미리보기 화면 → PNG 캡처 → 썸네일로 사용. 성공 시 생성된 File 을, 실패 시 null 을 반환한다.
@@ -206,42 +252,6 @@ export default function CreateAssetPage() {
     if (!file) setError('썸네일 자동생성에 실패했습니다. 파일로 직접 올려주세요.')
   }
 
-  // AI 추천: 제목 + 파일명 + (있으면)썸네일/미리보기 캡처를 서버로 보내 태그·카테고리를 추천받는다.
-  async function onAiSuggest() {
-    setAiError('')
-    setAiBusy(true)
-    try {
-      const filenames = [assetPackage?.name].filter(Boolean)
-
-      // 이미지 보조: 이미 올린 썸네일이 있으면 그걸, 없으면 미리보기 화면을 1회 캡처해 축소본을 첨부.
-      let thumbnailBase64 = null
-      if (thumbnail) {
-        thumbnailBase64 = await downscaleToDataUrl(thumbnail)
-      } else if (previewStatus === 'ready' && typeof captureRef.current === 'function') {
-        const blob = await captureRef.current()
-        if (blob) thumbnailBase64 = await downscaleToDataUrl(blob)
-      }
-
-      const res = await aiApi.suggest({ title: title.trim(), filenames, thumbnailBase64 })
-      const tags = Array.isArray(res?.tags) ? res.tags : []
-      setAiTags(tags)
-      setAiCategory(res?.categoryId ? { categoryId: res.categoryId, categoryPath: res.categoryPath } : null)
-      if (tags.length === 0 && !res?.categoryId) {
-        setAiError('추천할 만한 게 마땅치 않아요. 제목을 조금 더 구체적으로 적어보세요.')
-      }
-    } catch (err) {
-      setAiError(err.message || 'AI 추천에 실패했어요. 잠시 후 다시 시도해주세요.')
-    } finally {
-      setAiBusy(false)
-    }
-  }
-
-  // 추천 태그를 TagInput 규칙(소문자·공백→하이픈·최대 10개)에 맞춰 담는다.
-  function addAiTag(raw) {
-    const norm = String(raw).trim().toLowerCase().replace(/\s+/g, '-')
-    setTags(prev => (norm && !prev.includes(norm) && prev.length < 10 ? [...prev, norm] : prev))
-  }
-
   async function onSubmit(e) {
     e.preventDefault()
     setError('')
@@ -253,7 +263,11 @@ export default function CreateAssetPage() {
     if (!thumb) {
       thumb = await captureThumbnail()
     }
-    if (!thumb) { setError('썸네일 이미지는 필수입니다. (미리보기에서 "이 화면으로 썸네일 만들기"를 눌러 자동 생성할 수 있어요.)'); return }
+    if (!thumb) {
+      setShowThumbUpload(true)
+      setError('썸네일을 자동 생성하지 못했어요. 아래 "썸네일 직접 올리기"로 이미지를 하나 올려주세요.')
+      return
+    }
 
     // 업로드 전 사전검사: FBX가 참조하는 텍스처가 실제로 포함됐는지 브라우저에서 확인
     const check = await validateAssetPackage(assetPackage)
@@ -365,26 +379,20 @@ export default function CreateAssetPage() {
           </div>
         )}
 
+        {/* ① 3D 에셋 파일을 먼저 올린다 — 미리보기가 뜨고, 그 화면이 자동으로 썸네일이 된다. */}
         <div>
           <label className="text-sm font-medium text-slate-700 block mb-1">
-            썸네일 <span className="text-crimson-600">*</span>
-            <span className="text-slate-400 font-normal"> (모델로 자동 생성 가능)</span>
+            3D 에셋 파일 <span className="text-crimson-600">*</span>
+            <span className="text-slate-400 font-normal"> .glb, .fbx 또는 .zip · 먼저 올려주세요</span>
           </label>
-          <input type="file" accept="image/*" onChange={onThumb} className="text-sm text-slate-500" />
-          {preview && (
-            <img src={preview} alt="미리보기" className="mt-2 w-full max-h-56 object-contain rounded-lg border border-linen-200" />
-          )}
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-slate-700 block mb-1">
-            3D 에셋 패키지 <span className="text-crimson-600">*</span>
-            <span className="text-slate-400 font-normal"> .glb, .fbx 또는 .zip</span>
-          </label>
-          <input type="file" accept=".glb,.fbx,.zip,model/gltf-binary,application/zip,application/x-zip-compressed" required
-            onChange={e => setAssetPackage(e.target.files?.[0] ?? null)}
-            className="text-sm text-slate-500" />
-          {assetPackage && <span className="block mt-1 text-xs text-slate-400">{assetPackage.name}</span>}
+          <FileDropzone
+            accept=".glb,.fbx,.zip,model/gltf-binary,application/zip,application/x-zip-compressed"
+            icon="📦"
+            label="3D 파일을 끌어다 놓거나 클릭해서 선택"
+            hint=".glb / .fbx / .zip · 최대 50MB · GLB 권장"
+            file={assetPackage}
+            onFile={onAssetFile}
+          />
 
           {/* 업로드 전 3D 미리보기 — 준비되면 뷰어, 아니면 안내만. 실패해도 폼 제출엔 영향 없음. */}
           {assetPackage && (
@@ -446,6 +454,30 @@ export default function CreateAssetPage() {
               ※ 3D 툴에서 <b>텍스처를 FBX에 내장(Embed Media)</b>해 export 하면 ZIP 없이 FBX 하나로도 텍스처가 표시됩니다.
             </p>
           </div>
+        </div>
+
+        {/* ② 썸네일 — 선택. 기본은 위 미리보기 화면이 자동 썸네일이 되고, 원하는 사람만 직접 올린다. */}
+        <div>
+          <button type="button" onClick={() => setShowThumbUpload(v => !v)}
+            className="w-full flex items-center gap-1.5 text-sm font-medium text-slate-700">
+            🖼️ 썸네일 직접 올리기
+            <span className="text-slate-400 font-normal text-xs">(선택 — 안 올리면 위 미리보기 화면이 자동 썸네일)</span>
+            <span className="text-slate-400 ml-auto">{showThumbUpload ? '▲' : '▼'}</span>
+          </button>
+          {showThumbUpload && (
+            <div className="mt-2">
+              <FileDropzone
+                accept="image/*"
+                icon="🖼️"
+                label="썸네일 이미지를 끌어다 놓거나 클릭해서 선택"
+                file={thumbnail}
+                onFile={onThumbFile}
+              />
+            </div>
+          )}
+          {preview && (
+            <img src={preview} alt="썸네일 미리보기" className="mt-2 w-full max-h-56 object-contain rounded-lg border border-linen-200" />
+          )}
         </div>
 
         <Button type="submit" disabled={loading} className="w-full">
