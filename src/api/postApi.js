@@ -23,6 +23,8 @@ export const postApi = {
     return requestMultipart('/posts', fd)
   },
   remove: (id) => request(`/posts/${id}`, { method: 'DELETE' }),
+  // 좋아요 토글 — 백엔드 POST /posts/{id}/like → { likeCount, liked }
+  toggleLike: (id) => request(`/posts/${id}/like`, { method: 'POST' }),
   // 게시글 메타데이터 수정 (제목/설명/카테고리/태그) — 백엔드 PUT /posts/{id}
   update: (id, { title, content, categoryId, tags }) =>
     request(`/posts/${id}`, {
