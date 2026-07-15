@@ -13,6 +13,12 @@ function RequestCard({ req }) {
   return (
     <Link to={`/requests/${req.id}`}
       className="group bg-white rounded-xl border border-[#C9CAAC]/40 shadow-[0_2px_12px_rgba(44,56,41,0.08)] hover:shadow-[0_8px_24px_rgba(44,56,41,0.16)] hover:border-[#869B7E]/60 transition-all p-4 flex flex-col">
+      {/* 참조 이미지(첫 장)를 썸네일로 사용 — 있을 때만 카드 상단에 표시 */}
+      {req.thumbnailUrl && (
+        <div className="-mx-4 -mt-4 mb-3 aspect-video bg-linen-100 overflow-hidden rounded-t-xl">
+          <img src={req.thumbnailUrl} alt={req.title} loading="lazy" className="w-full h-full object-cover" />
+        </div>
+      )}
       <div className="flex items-start justify-between gap-2 mb-2">
         <p className="font-semibold text-slate-800 text-sm group-hover:text-[#556350] line-clamp-1">{req.title}</p>
         <StatusBadge status={req.status} />
