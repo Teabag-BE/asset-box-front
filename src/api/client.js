@@ -1,6 +1,6 @@
 import { decodeJwt } from '../auth/jwt'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api'
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api'
 
 // 토큰 만료 여부 (30초 여유). 만료된 토큰을 그대로 보내면 백엔드 JwtFilter가
 // 예외를 던져 302 → /login → CORS("load fail")로 둔갑한다. 그래서 보내기 전에 거른다.

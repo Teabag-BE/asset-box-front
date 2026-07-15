@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { unzipSync } from 'fflate'
 import { postApi } from '../api/postApi'
+import { aiApi } from '../api/aiApi'
+import { downscaleToDataUrl } from '../utils/imageToDataUrl'
 import Button from '../components/Button'
 import FileDropzone from '../components/FileDropzone'
 import TagInput from '../features/post/TagInput'
@@ -95,6 +97,13 @@ export default function CreateAssetPage() {
   const [previewData, setPreviewData] = useState(null)   // { modelUrl, ext, textureUrls } | null
   const [previewStatus, setPreviewStatus] = useState('idle') // 'idle' | 'loading' | 'ready' | 'unavailable'
   const [showThumbUpload, setShowThumbUpload] = useState(false) // 썸네일 직접 올리기(선택) 펼침 여부
+  // AI 추천 상태 (서버에 OPENAI 키가 있을 때만 활성).
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState('')
+  const [aiTags, setAiTags] = useState([])                    // 추천 태그
+  const [aiCategory, setAiCategory] = useState(null)          // { categoryId, categoryPath } | null
+  const [presetCategory, setPresetCategory] = useState(null)  // CategorySelector 로 밀어넣을 categoryId
   const previewUrlsRef = useRef([])   // revoke 대상 blob URL 목록
   const captureRef = useRef(null)     // AssetViewer360 가 등록한 capture() 함수
 
@@ -160,6 +169,47 @@ export default function CreateAssetPage() {
       previewUrlsRef.current = []
     }
   }, [])
+
+  // 마운트 시 AI 사용 가능 여부만 조용히 확인. 서버에 키 없거나 미배포면 버튼 자체를 안 그린다.
+  useEffect(() => {
+    let alive = true
+    aiApi.status().then(r => { if (alive) setAiEnabled(r.enabled) })
+    return () => { alive = false }
+  }, [])
+
+  // AI 추천: 제목 + 파일명 + (있으면)썸네일/미리보기 캡처를 서버로 보내 태그·카테고리를 추천받는다.
+  async function onAiSuggest() {
+    setAiError('')
+    setAiBusy(true)
+    try {
+      const filenames = [assetPackage?.name].filter(Boolean)
+      // 이미 올린 썸네일이 있으면 그걸, 없으면 미리보기 화면을 1회 캡처해 축소본을 첨부.
+      let thumbnailBase64 = null
+      if (thumbnail) {
+        thumbnailBase64 = await downscaleToDataUrl(thumbnail)
+      } else if (previewStatus === 'ready' && typeof captureRef.current === 'function') {
+        const blob = await captureRef.current()
+        if (blob) thumbnailBase64 = await downscaleToDataUrl(blob)
+      }
+      const res = await aiApi.suggest({ title: title.trim(), filenames, thumbnailBase64 })
+      const tags = Array.isArray(res?.tags) ? res.tags : []
+      setAiTags(tags)
+      setAiCategory(res?.categoryId ? { categoryId: res.categoryId, categoryPath: res.categoryPath } : null)
+      if (tags.length === 0 && !res?.categoryId) {
+        setAiError('추천할 만한 게 마땅치 않아요. 제목을 조금 더 구체적으로 적어보세요.')
+      }
+    } catch (err) {
+      setAiError(err.message || 'AI 추천에 실패했어요. 잠시 후 다시 시도해주세요.')
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  // 추천 태그를 TagInput 규칙(소문자·공백→하이픈·최대 10개)에 맞춰 담는다.
+  function addAiTag(raw) {
+    const norm = String(raw).trim().toLowerCase().replace(/\s+/g, '-')
+    setTags(prev => (norm && !prev.includes(norm) && prev.length < 10 ? [...prev, norm] : prev))
+  }
 
   // 썸네일 파일 선택/드롭 처리. 드롭존과 자동캡처 양쪽에서 재사용.
   function onThumbFile(f) {
@@ -259,9 +309,75 @@ export default function CreateAssetPage() {
           <textarea value={content} onChange={e => setContent(e.target.value)} required rows={5} className={inputCls} placeholder="에셋에 대한 설명, 사용처, 라이선스 등" />
         </div>
 
-        <CategorySelector onSelect={setCategoryId} />
+        <CategorySelector onSelect={setCategoryId} value={presetCategory} />
 
         <TagInput value={tags} onChange={setTags} />
+
+        {/* ✨ AI 추천 — 서버에 키가 있을 때만 노출. 추천 결과는 눌러서 담는 방식(자동 적용 아님). */}
+        {aiEnabled && (
+          <div className="rounded-xl border border-[#C9CAAC]/60 bg-linen-50/50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium text-slate-700">✨ AI 추천</span>
+              <button
+                type="button"
+                onClick={onAiSuggest}
+                disabled={aiBusy || (!title.trim() && !assetPackage)}
+                className="rounded-lg bg-[#869B7E] text-white text-sm px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#75886c] transition-colors"
+              >
+                {aiBusy ? '분석 중…' : '태그·분류 추천받기'}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              제목·파일명{thumbnail || previewStatus === 'ready' ? '·썸네일' : ''}을 보고 추천해요. 원하는 것만 눌러서 담으세요.
+            </p>
+            {aiError && <p className="mt-2 text-xs text-crimson-600">{aiError}</p>}
+
+            {(aiTags.length > 0 || aiCategory) && (
+              <div className="mt-2 flex flex-col gap-2">
+                {aiCategory && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-slate-500 shrink-0">분류</span>
+                    <button
+                      type="button"
+                      onClick={() => setPresetCategory(aiCategory.categoryId)}
+                      className={`inline-flex items-center gap-1 rounded-full border text-xs px-2.5 py-1 transition-colors ${
+                        presetCategory === aiCategory.categoryId
+                          ? 'border-sage-200 bg-sage-100 text-sage-600 cursor-default'
+                          : 'border-[#869B7E] text-[#4b5d45] hover:bg-sage-50'
+                      }`}
+                    >
+                      {presetCategory === aiCategory.categoryId ? '✓' : '+'} {aiCategory.categoryPath || '추천 분류'}
+                    </button>
+                  </div>
+                )}
+                {aiTags.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-slate-500 shrink-0">태그</span>
+                    {aiTags.map(t => {
+                      const norm = String(t).trim().toLowerCase().replace(/\s+/g, '-')
+                      const added = tags.includes(norm)
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => addAiTag(t)}
+                          disabled={added}
+                          className={`inline-flex items-center gap-1 rounded-full text-xs px-2.5 py-1 border transition-colors ${
+                            added
+                              ? 'border-sage-200 bg-sage-100 text-sage-600 cursor-default'
+                              : 'border-[#C9CAAC] text-slate-600 hover:bg-sage-50'
+                          }`}
+                        >
+                          {added ? '✓' : '+'} #{norm}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ① 3D 에셋 파일을 먼저 올린다 — 미리보기가 뜨고, 그 화면이 자동으로 썸네일이 된다. */}
         <div>
