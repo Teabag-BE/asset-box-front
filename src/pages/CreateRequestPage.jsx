@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { requestApi } from '../api/requestApi'
 
@@ -10,6 +10,7 @@ export default function CreateRequestPage() {
     title: '', content: '', assetType: '', preferredStyle: '', engine: '', deadline: '',
   })
   const [references, setReferences] = useState([])   // 참조 이미지(선택, 여러 장)
+  const fileRef = useRef(null)                        // 숨긴 file input 참조(버튼으로 클릭)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -75,14 +76,17 @@ export default function CreateRequestPage() {
             <input name="deadline" type="datetime-local" value={form.deadline} onChange={onChange} className={inputCls} />
           </label>
         </div>
-        {/* file input 은 label 로 감싸지 않는다 — 감싸면 클릭이 label 로 전파돼 파일창이 이중 발동/안 열리는 이슈. */}
+        {/* 스타일된 버튼으로 숨긴 file input 을 클릭 — 맨 <input type=file> 이 회색/미클릭되던 문제 회피(에셋 업로드와 동일 패턴). */}
         <div className="flex flex-col gap-1 text-sm">
           <span className="text-slate-600">참조 이미지 <span className="text-slate-400">(선택, 여러 장 가능)</span></span>
-          <input type="file" accept="image/*" multiple
-            onChange={e => setReferences(Array.from(e.target.files ?? []))}
-            className="text-sm text-slate-500" />
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+            onChange={e => setReferences(Array.from(e.target.files ?? []))} />
+          <button type="button" onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center gap-2 self-start rounded-lg border border-[#C9CAAC] bg-linen-50 px-3 py-2 text-sm text-[#4b5d45] hover:bg-linen-100 transition-colors">
+            📎 이미지 선택{references.length > 0 ? ` (${references.length})` : ''}
+          </button>
           {references.length > 0 && (
-            <span className="text-xs text-slate-400">{references.length}개 선택됨 — {references.map(f => f.name).join(', ')}</span>
+            <span className="text-xs text-slate-400">{references.map(f => f.name).join(', ')}</span>
           )}
         </div>
         <button type="submit" disabled={loading}
