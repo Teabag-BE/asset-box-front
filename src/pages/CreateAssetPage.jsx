@@ -94,6 +94,7 @@ export default function CreateAssetPage() {
   // 미리보기 상태.
   const [previewData, setPreviewData] = useState(null)   // { modelUrl, ext, textureUrls } | null
   const [previewStatus, setPreviewStatus] = useState('idle') // 'idle' | 'loading' | 'ready' | 'unavailable'
+  const [showThumbUpload, setShowThumbUpload] = useState(false) // 썸네일 직접 올리기(선택) 펼침 여부
   const previewUrlsRef = useRef([])   // revoke 대상 blob URL 목록
   const captureRef = useRef(null)     // AssetViewer360 가 등록한 capture() 함수
 
@@ -212,7 +213,11 @@ export default function CreateAssetPage() {
     if (!thumb) {
       thumb = await captureThumbnail()
     }
-    if (!thumb) { setError('썸네일 이미지는 필수입니다. (미리보기에서 "이 화면으로 썸네일 만들기"를 눌러 자동 생성할 수 있어요.)'); return }
+    if (!thumb) {
+      setShowThumbUpload(true)
+      setError('썸네일을 자동 생성하지 못했어요. 아래 "썸네일 직접 올리기"로 이미지를 하나 올려주세요.')
+      return
+    }
 
     // 업로드 전 사전검사: FBX가 참조하는 텍스처가 실제로 포함됐는지 브라우저에서 확인
     const check = await validateAssetPackage(assetPackage)
@@ -258,28 +263,11 @@ export default function CreateAssetPage() {
 
         <TagInput value={tags} onChange={setTags} />
 
+        {/* ① 3D 에셋 파일을 먼저 올린다 — 미리보기가 뜨고, 그 화면이 자동으로 썸네일이 된다. */}
         <div>
           <label className="text-sm font-medium text-slate-700 block mb-1">
-            썸네일 <span className="text-crimson-600">*</span>
-            <span className="text-slate-400 font-normal"> (모델로 자동 생성 가능)</span>
-          </label>
-          <FileDropzone
-            accept="image/*"
-            icon="🖼️"
-            label="썸네일 이미지를 끌어다 놓거나 클릭해서 선택"
-            hint="모델 미리보기에서 자동 생성할 수도 있어요"
-            file={thumbnail}
-            onFile={onThumbFile}
-          />
-          {preview && (
-            <img src={preview} alt="미리보기" className="mt-2 w-full max-h-56 object-contain rounded-lg border border-linen-200" />
-          )}
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-slate-700 block mb-1">
-            3D 에셋 패키지 <span className="text-crimson-600">*</span>
-            <span className="text-slate-400 font-normal"> .glb, .fbx 또는 .zip</span>
+            3D 에셋 파일 <span className="text-crimson-600">*</span>
+            <span className="text-slate-400 font-normal"> .glb, .fbx 또는 .zip · 먼저 올려주세요</span>
           </label>
           <FileDropzone
             accept=".glb,.fbx,.zip,model/gltf-binary,application/zip,application/x-zip-compressed"
@@ -350,6 +338,30 @@ export default function CreateAssetPage() {
               ※ 3D 툴에서 <b>텍스처를 FBX에 내장(Embed Media)</b>해 export 하면 ZIP 없이 FBX 하나로도 텍스처가 표시됩니다.
             </p>
           </div>
+        </div>
+
+        {/* ② 썸네일 — 선택. 기본은 위 미리보기 화면이 자동 썸네일이 되고, 원하는 사람만 직접 올린다. */}
+        <div>
+          <button type="button" onClick={() => setShowThumbUpload(v => !v)}
+            className="w-full flex items-center gap-1.5 text-sm font-medium text-slate-700">
+            🖼️ 썸네일 직접 올리기
+            <span className="text-slate-400 font-normal text-xs">(선택 — 안 올리면 위 미리보기 화면이 자동 썸네일)</span>
+            <span className="text-slate-400 ml-auto">{showThumbUpload ? '▲' : '▼'}</span>
+          </button>
+          {showThumbUpload && (
+            <div className="mt-2">
+              <FileDropzone
+                accept="image/*"
+                icon="🖼️"
+                label="썸네일 이미지를 끌어다 놓거나 클릭해서 선택"
+                file={thumbnail}
+                onFile={onThumbFile}
+              />
+            </div>
+          )}
+          {preview && (
+            <img src={preview} alt="썸네일 미리보기" className="mt-2 w-full max-h-56 object-contain rounded-lg border border-linen-200" />
+          )}
         </div>
 
         <Button type="submit" disabled={loading} className="w-full">
