@@ -184,6 +184,51 @@ export function getSurfaceTexture(id, strength = 0.6) {
   }
 }
 
+// 표면 높이 패턴(회색조)을 노멀맵으로 변환한다.
+// glTF(.glb)는 bumpMap 을 지원하지 않으므로, 표면 질감을 노멀맵으로 만들면 라이브에서도
+// 보이고 '변형본 .glb 다운로드'에도 함께 포함된다. (id, strength) 별 캐시.
+const normalCache = new Map()
+export function getSurfaceNormalTexture(id, strength = 0.85) {
+  try {
+    if (!id || id === 'none') return null
+    const q = Math.round(Math.max(0, Math.min(1, strength)) * 100) / 100
+    const key = `${id}:${q}`
+    if (normalCache.has(key)) return normalCache.get(key)
+
+    const height = getSurfaceTexture(id, q)          // 회색조 높이 CanvasTexture
+    const src = height && height.image
+    if (!src || !src.width) return null
+    const w = src.width, h = src.height
+    const data = src.getContext('2d').getImageData(0, 0, w, h).data
+    const out = document.createElement('canvas'); out.width = w; out.height = h
+    const octx = out.getContext('2d')
+    const img = octx.createImageData(w, h)
+    const H = (x, y) => data[(((y % h + h) % h) * w + ((x % w + w) % w)) * 4] / 255
+    const s = 3.0                                     // Sobel 세기(노멀 기울기)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const dx = (H(x - 1, y) - H(x + 1, y)) * s
+        const dy = (H(x, y - 1) - H(x, y + 1)) * s
+        const len = Math.hypot(dx, dy, 1) || 1
+        const i = (y * w + x) * 4
+        img.data[i]     = (dx / len * 0.5 + 0.5) * 255
+        img.data[i + 1] = (dy / len * 0.5 + 0.5) * 255
+        img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255
+        img.data[i + 3] = 255
+      }
+    }
+    octx.putImageData(img, 0, 0)
+    const tex = new THREE.CanvasTexture(out)
+    tex.wrapS = THREE.RepeatWrapping
+    tex.wrapT = THREE.RepeatWrapping
+    normalCache.set(key, tex)
+    return tex
+  } catch (e) {
+    console.warn('[materialLab] getSurfaceNormalTexture 실패:', e)
+    return null
+  }
+}
+
 // UI 노출용 표면 질감 목록. make(strength) 로 텍스처 생성(캐시 경유).
 export const SURFACE_TEXTURES = [
   { id: 'none', label: '없음', make: () => null },
@@ -270,12 +315,14 @@ export function buildMaterial(config = {}) {
       material.iridescenceIOR = 1.3
     }
 
-    // 표면 질감 → bumpMap.
-    const surface = getSurfaceTexture(cfg.surfaceId, num(cfg.surfaceStrength, 0.6))
-    if (surface) {
-      material.bumpMap = surface
-      // 강도를 크게 키운다(기존 최대 0.27은 너무 약했음). 최대 ~1.4.
-      material.bumpScale = 0.1 + num(cfg.surfaceStrength, 0.6) * 1.3
+    // 표면 질감 → normalMap. (bumpMap 은 glTF 로 내보내지 못하므로 노멀맵을 쓴다:
+    // 라이브에서도 보이고 '변형본 .glb 다운로드'에도 함께 포함된다.)
+    const s = num(cfg.surfaceStrength, 0.85)
+    const surfaceNormal = getSurfaceNormalTexture(cfg.surfaceId, s)
+    if (surfaceNormal) {
+      material.normalMap = surfaceNormal
+      const sc = 0.4 + s * 2.6   // 강도(최대 ~3.0) — 이전보다 더 세게.
+      material.normalScale = new THREE.Vector2(sc, sc)
     }
 
     // 발광(emissive).
