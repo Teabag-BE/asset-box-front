@@ -99,7 +99,7 @@ export default function RequestDetailPage() {
             {req.referenceImages?.length > 0 && (
               <div className="grid grid-cols-3 gap-2 mt-5">
                 {req.referenceImages.map((img, i) => (
-                  <img key={i} src={img.url ?? img.presignedUrl} alt={`reference ${i + 1}`}
+                  <img key={i} src={img.accessUrl ?? img.url ?? img.presignedUrl} alt={`reference ${i + 1}`}
                     className="w-full aspect-square object-cover rounded-lg border border-linen-200" />
                 ))}
               </div>
