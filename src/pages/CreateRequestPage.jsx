@@ -9,6 +9,7 @@ export default function CreateRequestPage() {
   const [form, setForm] = useState({
     title: '', content: '', assetType: '', preferredStyle: '', engine: '', deadline: '',
   })
+  const [references, setReferences] = useState([])   // 참조 이미지(선택, 여러 장)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -29,6 +30,7 @@ export default function CreateRequestPage() {
         engine: form.engine || null,
         // datetime-local("2026-06-20T10:00") → 초 보강
         deadline: form.deadline ? `${form.deadline}:00` : null,
+        references,
       })
       navigate(created?.id ? `/requests/${created.id}` : '/requests')
     } catch (err) {
@@ -71,6 +73,15 @@ export default function CreateRequestPage() {
             <input name="deadline" type="datetime-local" value={form.deadline} onChange={onChange} className={inputCls} />
           </label>
         </div>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-slate-600">참조 이미지 <span className="text-slate-400">(선택, 여러 장 가능)</span></span>
+          <input type="file" accept="image/*" multiple
+            onChange={e => setReferences(Array.from(e.target.files ?? []))}
+            className="text-sm text-slate-500" />
+          {references.length > 0 && (
+            <span className="text-xs text-slate-400">{references.length}개 선택됨 — {references.map(f => f.name).join(', ')}</span>
+          )}
+        </label>
         <button type="submit" disabled={loading}
           className="mt-1 w-full bg-[#869B7E] disabled:bg-[#a9b8a3] text-white rounded-lg py-2.5 font-semibold hover:bg-[#6b7d64] transition-colors">
           {loading ? '등록 중...' : '요청 등록'}
