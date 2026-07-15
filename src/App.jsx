@@ -18,6 +18,7 @@ import EditAssetPage from './pages/EditAssetPage'
 import ProfilePage from './pages/ProfilePage'
 import PortfolioPage from './pages/PortfolioPage'
 import DirectoryPage from './pages/DirectoryPage'
+import HallOfFamePage from './pages/HallOfFamePage'
 import SearchResultsPage from './pages/SearchResultsPage'
 
 export default function App() {
@@ -47,6 +48,7 @@ export default function App() {
 
             {/* 크리에이터 디렉토리 / 검색 */}
             <Route path="/directory" element={<ProtectedRoute><DirectoryPage /></ProtectedRoute>} />
+            <Route path="/hall"      element={<ProtectedRoute><HallOfFamePage /></ProtectedRoute>} />
             <Route path="/search"    element={<ProtectedRoute><SearchResultsPage /></ProtectedRoute>} />
 
             {/* 프로필 / 포트폴리오 */}
