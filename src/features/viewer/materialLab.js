@@ -188,6 +188,10 @@ export function getSurfaceTexture(id, strength = 0.6) {
 // glTF(.glb)는 bumpMap 을 지원하지 않으므로, 표면 질감을 노멀맵으로 만들면 라이브에서도
 // 보이고 '변형본 .glb 다운로드'에도 함께 포함된다. (id, strength) 별 캐시.
 const normalCache = new Map()
+
+// 패턴별 타일링(반복) 횟수 — 클수록 요철이 잘게(작게) 보인다. 도트가 너무 커서 특히 촘촘히.
+const SURFACE_REPEAT = { noise: 5, brushed: 4, leather: 5, dots: 8, waves: 4 }
+
 export function getSurfaceNormalTexture(id, strength = 0.85) {
   try {
     if (!id || id === 'none') return null
@@ -221,6 +225,9 @@ export function getSurfaceNormalTexture(id, strength = 0.85) {
     const tex = new THREE.CanvasTexture(out)
     tex.wrapS = THREE.RepeatWrapping
     tex.wrapT = THREE.RepeatWrapping
+    // 패턴을 더 잘게(자잘하게) — 타일링을 늘려 요철 하나하나를 작게 만든다. 도트는 특히 촘촘히.
+    const r = SURFACE_REPEAT[id] ?? 4
+    tex.repeat.set(r, r)
     normalCache.set(key, tex)
     return tex
   } catch (e) {
