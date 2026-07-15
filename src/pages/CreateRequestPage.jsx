@@ -31,6 +31,8 @@ export default function CreateRequestPage() {
         // datetime-local("2026-06-20T10:00") → 초 보강
         deadline: form.deadline ? `${form.deadline}:00` : null,
         references,
+        // 첫 참조 이미지를 요청 썸네일로도 사용 → 목록 카드에 이미지가 뜨게 한다(별도 썸네일 입력 없음).
+        thumbnail: references[0],
       })
       navigate(created?.id ? `/requests/${created.id}` : '/requests')
     } catch (err) {
