@@ -6,6 +6,7 @@ import { timeAgo } from '../utils/timeAgo'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import Spinner from '../components/Spinner'
+import UserName from '../components/UserName'
 
 function RequestCard({ req }) {
   const deadline = req.deadline ? new Date(req.deadline).toLocaleDateString('ko-KR') : null
@@ -23,9 +24,9 @@ function RequestCard({ req }) {
       </div>
       <p className="text-xs text-slate-500 line-clamp-2 flex-1">{req.content}</p>
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-linen-200 text-xs text-slate-400">
-        <span>요청자 #{req.requesterId}</span>
+        <span>요청자 <UserName id={req.requesterId} /></span>
         <span className="flex items-center gap-2">
-          {req.assigneeId && <span className="text-[#556350]">담당 #{req.assigneeId}</span>}
+          {req.assigneeId && <span className="text-[#556350]">담당 <UserName id={req.assigneeId} /></span>}
           <span>{timeAgo(req.createdAt)}</span>
         </span>
       </div>
