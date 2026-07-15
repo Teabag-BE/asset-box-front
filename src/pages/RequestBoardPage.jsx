@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { requestApi } from '../api/requestApi'
 import { STATUS_TABS, StatusBadge } from '../features/request/requestStatus'
-import { timeAgo } from '../utils/timeAgo'
+import { timeAgo, formatDateTime } from '../utils/timeAgo'
 import Button from '../components/Button'
 import EmptyState from '../components/EmptyState'
 import Spinner from '../components/Spinner'
@@ -33,7 +33,7 @@ function RequestCard({ req }) {
         <span>요청자 <UserName id={req.requesterId} /></span>
         <span className="flex items-center gap-2">
           {req.assigneeId && <span className="text-[#556350]">담당 <UserName id={req.assigneeId} /></span>}
-          <span>{timeAgo(req.createdAt)}</span>
+          <span title={formatDateTime(req.createdAt)}>{timeAgo(req.createdAt)}</span>
         </span>
       </div>
     </Link>

@@ -7,6 +7,7 @@ import Spinner from '../components/Spinner'
 import Button from '../components/Button'
 import UserName from '../components/UserName'
 import CommentSection from '../features/post/CommentSection'
+import { formatDateTime } from '../utils/timeAgo'
 
 function Field({ label, value }) {
   if (!value) return null
@@ -135,6 +136,10 @@ export default function RequestDetailPage() {
             <div>
               <p className="text-xs text-slate-400 mb-0.5">담당 제작자</p>
               <p className="text-sm font-medium text-slate-800">{req.assigneeId ? <UserName id={req.assigneeId} /> : '미배정'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 mb-0.5">요청 시각</p>
+              <p className="text-sm font-medium text-slate-800">{formatDateTime(req.createdAt)}</p>
             </div>
             {!isMine && (
               <Button variant="secondary" size="sm" className="w-full justify-center"
