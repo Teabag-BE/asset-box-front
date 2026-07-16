@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { postApi } from '../api/postApi'
 import { userApi } from '../api/userApi'
 import Avatar from '../components/Avatar'
@@ -9,6 +9,7 @@ import Spinner from '../components/Spinner'
 // 백엔드에 유저 목록 API가 없어, 에셋 작성자들을 모아 디렉토리를 구성(클라이언트).
 // 유저목록 API 생기면 그걸로 교체.
 export default function DirectoryPage() {
+  const navigate = useNavigate()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
@@ -57,11 +58,17 @@ export default function DirectoryPage() {
                   i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-slate-400' : 'bg-orange-400'}`}>{i + 1}위</span>
               )}
               <Avatar src={u.avatarUrl} nickname={u.nickname} size="lg" />
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="font-bold text-slate-900">{u.nickname}</p>
                 <p className="text-xs text-slate-400 truncate">{u.description || '소개가 없습니다.'}</p>
-                <p className="text-xs text-slate-500 mt-1"><b>{u.assetCount}</b> 에셋 · <span className="text-slate-300">0 좋아요</span></p>
+                <p className="text-xs text-slate-500 mt-1"><b>{u.assetCount}</b> 에셋{u.major ? ` · ${u.major}` : ''}</p>
               </div>
+              {/* 카드 전체가 Link 라, DM 버튼은 기본 내비게이션을 막고 대화방으로 이동 */}
+              <button type="button" title={`${u.nickname}에게 메시지`}
+                onClick={e => { e.preventDefault(); e.stopPropagation(); navigate(`/messages/${u.id}`) }}
+                className="shrink-0 self-center rounded-lg border border-[#869B7E]/50 bg-sage-50 px-2.5 py-1.5 text-sm text-[#556350] hover:bg-sage-100 transition-colors">
+                💬
+              </button>
             </Link>
           ))}
         </div>

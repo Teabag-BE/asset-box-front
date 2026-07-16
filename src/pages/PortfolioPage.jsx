@@ -29,8 +29,14 @@ export default function PortfolioPage() {
 
   return (
     <>
-      <div className="max-w-5xl mx-auto px-4 pt-4">
+      <div className="max-w-5xl mx-auto px-4 pt-4 flex items-center justify-between gap-2">
         <Link to="/directory" className="text-sm text-slate-400 hover:text-slate-600">← 크리에이터 디렉토리</Link>
+        {!isMe && (
+          <Link to={`/messages/${profile.id}`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#869B7E]/50 bg-sage-50 px-3 py-1.5 text-sm font-semibold text-[#556350] hover:bg-sage-100 transition-colors">
+            💬 메시지 보내기
+          </Link>
+        )}
       </div>
       <PortfolioView profile={profile} isMe={isMe} />
     </>
