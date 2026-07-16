@@ -85,7 +85,7 @@ export default function EditAssetPage() {
         <TagInput value={tags} onChange={setTags} />
         <p className="text-xs text-slate-400">※ 모델·썸네일 파일 교체는 준비 중입니다. 지금은 제목·설명·카테고리·태그만 수정됩니다.</p>
         <div className="flex gap-2">
-          <Button type="submit" disabled={saving}>{saving ? '저장 중…' : '저장'}</Button>
+          <Button type="submit" loading={saving}>{saving ? '저장 중…' : '저장'}</Button>
           <Button type="button" variant="secondary" onClick={() => navigate(`/assets/${id}`)}>취소</Button>
         </div>
       </form>

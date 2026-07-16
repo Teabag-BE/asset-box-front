@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useToast } from '../components/Toast'
 
 const MAJORS = [
   { value: 'TA', label: '3D 아티스트' },
@@ -13,6 +14,7 @@ const MAJORS = [
 export default function SignupPage() {
   const { signup } = useAuth()
   const navigate = useNavigate()
+  const toast = useToast()
   const [form, setForm] = useState({
     email: '', password: '', name: '', nickname: '', major: 'TA',
   })
@@ -27,6 +29,7 @@ export default function SignupPage() {
     setLoading(true)
     try {
       await signup(form)
+      toast('회원가입이 완료되었어요! 로그인해주세요 🎉')
       navigate('/login')
     } catch (err) {
       setError(err.message)
