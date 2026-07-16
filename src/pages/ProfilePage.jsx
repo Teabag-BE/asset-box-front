@@ -4,10 +4,12 @@ import { useAuth } from '../auth/AuthContext'
 import { userApi } from '../api/userApi'
 import PortfolioView from '../features/post/PortfolioView'
 import Button from '../components/Button'
+import { useToast } from '../components/Toast'
 
 export default function ProfilePage() {
   const { user, logout, refresh } = useAuth()
   const navigate = useNavigate()
+  const toast = useToast()
   const [msg, setMsg] = useState('')
   if (!user) return null
 
@@ -17,8 +19,10 @@ export default function ProfilePage() {
       await userApi.uploadAvatar(file)
       await refresh?.()           // 컨텍스트 갱신(있으면)
       setMsg('아바타가 변경되었습니다. 새로고침 시 반영돼요.')
+      toast('아바타가 변경되었습니다')
     } catch (e) {
       setMsg(e.message)
+      toast(e.message ?? '아바타 변경에 실패했어요', 'error')
     }
   }
 
@@ -28,8 +32,10 @@ export default function ProfilePage() {
       await userApi.updateMe(data)
       await refresh?.()           // 갱신된 프로필을 컨텍스트에 반영
       setMsg('프로필이 저장되었습니다.')
+      toast('프로필이 저장되었습니다')
     } catch (e) {
       setMsg(e.message)
+      toast(e.message ?? '저장에 실패했어요', 'error')
       throw e                     // 실패 시 PortfolioView가 편집 모드 유지하도록 재던짐
     }
   }

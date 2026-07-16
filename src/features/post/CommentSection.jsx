@@ -3,6 +3,8 @@ import { commentApi, requestCommentApi } from '../../api/commentApi'
 import { useAuth } from '../../auth/AuthContext'
 import Avatar from '../../components/Avatar'
 import Button from '../../components/Button'
+import { useToast } from '../../components/Toast'
+import { useConfirm } from '../../components/ConfirmDialog'
 import { timeAgo } from '../../utils/timeAgo'
 
 // 백엔드는 flat list(부모/답글이 한 배열, parentId 로만 구분)를 준다.
@@ -62,10 +64,13 @@ function CommentInput({ onSubmit, placeholder = '댓글을 입력하세요...', 
 }
 
 function ReplyItem({ reply, currentUserId, targetId, api, onRefresh, onError }) {
+  const toast = useToast()
+  const confirm = useConfirm()
   async function handleDelete() {
-    if (!confirm('삭제하시겠습니까?')) return
+    if (!(await confirm({ title: '답글 삭제', message: '이 답글을 삭제할까요?', confirmText: '삭제', danger: true }))) return
     try {
       await api.deleteComment(targetId, reply.id)
+      toast('답글을 삭제했어요')
       onRefresh()
     } catch (err) {
       onError(err.message ?? '삭제에 실패했습니다.')
@@ -93,11 +98,14 @@ function ReplyItem({ reply, currentUserId, targetId, api, onRefresh, onError }) 
 
 function CommentItem({ comment, targetId, currentUserId, api, onRefresh, onError }) {
   const [showReply, setShowReply] = useState(false)
+  const toast = useToast()
+  const confirm = useConfirm()
 
   async function handleDelete() {
-    if (!confirm('댓글을 삭제하시겠습니까?')) return
+    if (!(await confirm({ title: '댓글 삭제', message: '이 댓글을 삭제할까요?', confirmText: '삭제', danger: true }))) return
     try {
       await api.deleteComment(targetId, comment.id)
+      toast('댓글을 삭제했어요')
       onRefresh()
     } catch (err) {
       onError(err.message ?? '삭제에 실패했습니다.')
@@ -108,6 +116,7 @@ function CommentItem({ comment, targetId, currentUserId, api, onRefresh, onError
     try {
       await api.createComment(targetId, { content: text, parentId: comment.id })
       setShowReply(false)
+      toast('답글을 남겼어요')
       onRefresh()
     } catch (err) {
       onError(err.message ?? '등록에 실패했습니다.')
@@ -165,6 +174,7 @@ function CommentItem({ comment, targetId, currentUserId, api, onRefresh, onError
  */
 export default function CommentSection({ targetId, type = 'post' }) {
   const { user } = useAuth()
+  const toast = useToast()
   const [comments, setComments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -186,6 +196,7 @@ export default function CommentSection({ targetId, type = 'post' }) {
   async function handleCreateComment(text) {
     try {
       await api.createComment(targetId, { content: text, parentId: null })
+      toast('댓글을 남겼어요')
       await load()
     } catch (err) {
       setError(err.message ?? '등록에 실패했습니다.')
