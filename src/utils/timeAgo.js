@@ -22,6 +22,14 @@ export function timeAgo(iso) {
   return d.toLocaleDateString('ko-KR')
 }
 
+// 시:분만(채팅 말풍선용) — UTC 문자열을 로컬(KST)로 보정해 표시.
+// 예: "오후 3:24"
+export function formatTime(iso) {
+  const d = parseServerDate(iso)
+  if (!d) return ''
+  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+}
+
 // 절대 시각(정확한 업로드 시간) — 뷰어 로컬 타임존(KST 등)으로 표시.
 // 예: "2026년 7월 16일 오후 3:24"
 export function formatDateTime(iso) {

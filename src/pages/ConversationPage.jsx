@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { messageApi } from '../api/messageApi'
 import { resolveUserName } from '../utils/userNames'
+import { formatTime } from '../utils/timeAgo'
 import Spinner from '../components/Spinner'
 import Avatar from '../components/Avatar'
 import { useToast } from '../components/Toast'
@@ -14,7 +15,7 @@ function MessageBubble({ msg, isMe }) {
       }`}>
         {msg.content}
         <div className={`text-[11px] mt-1 ${isMe ? 'text-white/70' : 'text-slate-400'}`}>
-          {new Date(msg.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+          {formatTime(msg.createdAt)}
           {isMe && <span className="ml-1">{msg.read ? '읽음' : ''}</span>}
         </div>
       </div>
