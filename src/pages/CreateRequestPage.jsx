@@ -5,6 +5,30 @@ import { useToast } from '../components/Toast'
 
 const ENGINES = ['', 'UNREAL', 'UNITY', 'ETC']
 
+// 처음 쓰는 사람이 바로 참고할 수 있는 "깔끔한 요청" 예시. 버튼으로 폼을 채운다.
+const TEMPLATE = {
+  title: '[캐릭터] 로우폴리 판타지 검사 캐릭터 1종 제작 요청',
+  assetType: '캐릭터',
+  preferredStyle: '로우폴리 · 스타일라이즈드',
+  engine: 'UNITY',
+  content: `■ 개요
+게임에 바로 쓸 로우폴리 판타지 "검사" 캐릭터 1종이 필요합니다.
+
+■ 필수 요구사항
+- 폴리곤: 8,000 트라이앵글 이하
+- 텍스처: 2K PBR (BaseColor / Normal / Roughness / Metallic)
+- 포맷: .glb 단일 (또는 .fbx + 텍스처 zip)
+- 리깅: 휴머노이드 (선택)
+
+■ 스타일 · 레퍼런스
+- 톤: 밝고 채도 높은 판타지, 과장된 실루엣
+- 참고 이미지는 아래 "참조 이미지"에 첨부해주세요 🙌
+
+■ 납기 · 비고
+- 희망 납기: 약 2주
+- 용도: 포트폴리오 / 교육용 (상업적 사용 없음)`,
+}
+
 export default function CreateRequestPage() {
   const navigate = useNavigate()
   const toast = useToast()
@@ -48,7 +72,14 @@ export default function CreateRequestPage() {
 
   return (
     <div className="max-w-xl mx-auto px-4 py-6">
-      <h1 className="text-xl font-bold text-slate-900 mb-4">요청 작성</h1>
+      <h1 className="text-xl font-bold text-slate-900 mb-2">요청 작성</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <p className="text-xs text-slate-400">처음이라면 예시 템플릿으로 시작해보세요. 항목만 바꿔 쓰면 돼요.</p>
+        <button type="button" onClick={() => setForm(f => ({ ...f, ...TEMPLATE }))}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#869B7E]/50 bg-sage-50 px-3 py-1.5 text-sm font-semibold text-[#556350] hover:bg-sage-100 transition-colors">
+          📋 예시 템플릿으로 채우기
+        </button>
+      </div>
       {error && <p className="text-crimson-600 text-sm mb-3">{error}</p>}
       <form onSubmit={onSubmit} className="flex flex-col gap-4 bg-white border border-slate-200 rounded-2xl p-6">
         <label className="flex flex-col gap-1 text-sm">
