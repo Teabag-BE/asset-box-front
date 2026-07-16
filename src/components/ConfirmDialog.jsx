@@ -38,17 +38,23 @@ export function ConfirmProvider({ children }) {
           }}>
           <style>{`@keyframes abx-cf-fade{from{opacity:0}to{opacity:1}}@keyframes abx-cf-pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}`}</style>
           <div onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#fff', borderRadius: 14, maxWidth: 340, width: '100%', padding: '22px 22px 18px',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)', animation: 'abx-cf-pop .18s cubic-bezier(.2,.7,.2,1)',
-            }}>
-            <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{state.title}</h3>
-            {state.message && <p style={{ margin: '0 0 18px', fontSize: 14, color: '#64748b', lineHeight: 1.6, whiteSpace: 'pre-line' }}>{state.message}</p>}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            className="bg-white w-full max-w-[340px] rounded-2xl p-6 border border-linen-200"
+            style={{ boxShadow: '0 24px 64px rgba(44,56,41,0.28)', animation: 'abx-cf-pop .18s cubic-bezier(.2,.7,.2,1)' }}>
+            {/* 아이콘 헤더: danger 는 크림슨, 일반은 세이지 */}
+            <div className="flex items-start gap-3 mb-4">
+              <span className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-lg ${state.danger ? 'bg-crimson-100 text-crimson-500' : 'bg-sage-100 text-[#556350]'}`} aria-hidden="true">
+                {state.danger ? '🗑️' : '💬'}
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-[15px] font-bold text-[#42503d] leading-snug">{state.title}</h3>
+                {state.message && <p className="text-[13.5px] text-slate-500 mt-1 leading-relaxed whitespace-pre-line">{state.message}</p>}
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => close(false)}
-                style={{ padding: '8px 16px', borderRadius: 9, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>{state.cancelText}</button>
+                className="px-4 py-2 rounded-lg border border-[#C9CAAC]/70 bg-white text-[#556350] text-sm font-semibold hover:bg-linen-100 transition-colors">{state.cancelText}</button>
               <button type="button" onClick={() => close(true)}
-                style={{ padding: '8px 16px', borderRadius: 9, border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', background: state.danger ? '#dc2626' : '#4b7d45' }}>{state.confirmText}</button>
+                className={`px-4 py-2 rounded-lg text-white text-sm font-semibold transition-colors ${state.danger ? 'bg-crimson-500 hover:bg-crimson-600' : 'bg-[#869B7E] hover:bg-[#6b7d64]'}`}>{state.confirmText}</button>
             </div>
           </div>
         </div>

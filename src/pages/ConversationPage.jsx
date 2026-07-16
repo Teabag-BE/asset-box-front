@@ -4,6 +4,7 @@ import { messageApi } from '../api/messageApi'
 import { resolveUserName } from '../utils/userNames'
 import Spinner from '../components/Spinner'
 import Avatar from '../components/Avatar'
+import { useToast } from '../components/Toast'
 
 function MessageBubble({ msg, isMe }) {
   return (
@@ -23,6 +24,7 @@ function MessageBubble({ msg, isMe }) {
 
 export default function ConversationPage() {
   const { partnerId } = useParams()
+  const toast = useToast()
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState('')
@@ -80,6 +82,7 @@ export default function ConversationPage() {
     } catch (err) {
       setError(err.message)
       setInput(text)
+      toast('메시지 전송에 실패했어요', 'error')
     } finally {
       setSending(false)
     }
