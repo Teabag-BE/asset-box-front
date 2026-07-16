@@ -6,6 +6,7 @@ import { aiApi } from '../api/aiApi'
 import { downscaleToDataUrl } from '../utils/imageToDataUrl'
 import Button from '../components/Button'
 import FileDropzone from '../components/FileDropzone'
+import { useToast } from '../components/Toast'
 import TagInput from '../features/post/TagInput'
 import CategorySelector from '../features/post/CategorySelector'
 import { toAssetZipFile } from '../utils/assetZip'
@@ -83,6 +84,7 @@ async function buildPreviewData(file) {
 
 export default function CreateAssetPage() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [categoryId, setCategoryId] = useState(null)
@@ -285,6 +287,7 @@ export default function CreateAssetPage() {
         thumbnail: thumb,
         assetZip,
       })
+      toast('에셋이 등록되었습니다 🎉')
       navigate(created?.id ? `/assets/${created.id}` : '/assets')
     } catch (err) {
       setError(err.message)

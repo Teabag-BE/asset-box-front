@@ -4,6 +4,7 @@ import { postApi } from '../api/postApi'
 import { useAuth } from '../auth/AuthContext'
 import Button from '../components/Button'
 import Spinner from '../components/Spinner'
+import { useToast } from '../components/Toast'
 import TagInput from '../features/post/TagInput'
 import CategorySelector from '../features/post/CategorySelector'
 
@@ -11,6 +12,7 @@ import CategorySelector from '../features/post/CategorySelector'
 export default function EditAssetPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const toast = useToast()
   const { user } = useAuth()
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
@@ -50,6 +52,7 @@ export default function EditAssetPage() {
     setSaving(true)
     try {
       await postApi.update(id, { title, content, categoryId, tags })
+      toast('수정이 저장되었습니다')
       navigate(`/assets/${id}`)
     } catch (err) {
       setError(err.message)
