@@ -60,7 +60,10 @@ async function ensureToken() {
 }
 
 export async function request(path, options = {}) {
-  const { skipAuth, ...fetchOptions } = options
+  // okOnNonJson: 2xx인데 본문이 JSON이 아니거나 ApiResponse 래핑이 아니어도 성공으로 처리한다.
+  // (백엔드가 엔티티를 직접 반환해 직렬화가 깨지는 등으로 200+비JSON 이 오는, 응답 데이터가
+  //  필요 없는 호출용 — 예: 게시글 수정. 백엔드가 DTO 로 고쳐지면 자연히 정상 경로를 탄다.)
+  const { skipAuth, okOnNonJson, ...fetchOptions } = options
   // 로그인/회원가입은 익명 전용 엔드포인트라 토큰을 붙이면 안 됨(붙으면 302/403)
   const token = skipAuth ? null : await ensureToken()
   if (!skipAuth && localStorage.getItem('accessToken') && !token) {
@@ -85,9 +88,13 @@ export async function request(path, options = {}) {
   try {
     json = text ? JSON.parse(text) : {}
   } catch {
+    if (okOnNonJson && res.ok) return null   // 2xx + 비JSON → 성공으로 간주
     throw nonJsonError(res.status)
   }
-  if (!json.success) throw new Error(json.error?.message ?? json.message ?? `요청 실패 (HTTP ${res.status})`)
+  if (!json.success) {
+    if (okOnNonJson && res.ok) return json.data ?? null   // 2xx면 래핑이 달라도 성공
+    throw new Error(json.error?.message ?? json.message ?? `요청 실패 (HTTP ${res.status})`)
+  }
   return json.data
 }
 
