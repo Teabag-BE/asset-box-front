@@ -1,11 +1,13 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { requestApi } from '../api/requestApi'
+import { useToast } from '../components/Toast'
 
 const ENGINES = ['', 'UNREAL', 'UNITY', 'ETC']
 
 export default function CreateRequestPage() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [form, setForm] = useState({
     title: '', content: '', assetType: '', preferredStyle: '', engine: '', deadline: '',
   })
@@ -35,6 +37,7 @@ export default function CreateRequestPage() {
         // 첫 참조 이미지를 요청 썸네일로도 사용 → 목록 카드에 이미지가 뜨게 한다(별도 썸네일 입력 없음).
         thumbnail: references[0],
       })
+      toast('요청이 등록되었습니다 🎉')
       navigate(created?.id ? `/requests/${created.id}` : '/requests')
     } catch (err) {
       setError(err.message)

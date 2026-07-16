@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
+import { ToastProvider } from './components/Toast'
 import ProtectedRoute from './auth/ProtectedRoute'
 import Layout from './components/Layout'
 
@@ -26,6 +27,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ToastProvider>
         <Routes>
           <Route element={<Layout />}>
             <Route path="/"       element={<HomePage />} />
@@ -60,6 +62,7 @@ export default function App() {
             <Route path="/portfolio/:userId"  element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
           </Route>
         </Routes>
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   )
