@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, lazy, Suspense } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { unzipSync } from 'fflate'
 import { postApi } from '../api/postApi'
 import { aiApi } from '../api/aiApi'
@@ -85,6 +85,9 @@ async function buildPreviewData(file) {
 export default function CreateAssetPage() {
   const navigate = useNavigate()
   const toast = useToast()
+  // 요청 게시판에서 "완성물 등록"으로 들어오면 ?requestId=N 이 붙는다 → 이 에셋을 그 요청에 연결(완료 처리).
+  const [searchParams] = useSearchParams()
+  const linkedRequestId = searchParams.get('requestId')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [categoryId, setCategoryId] = useState(null)
@@ -286,6 +289,7 @@ export default function CreateAssetPage() {
         tags,
         thumbnail: thumb,
         assetZip,
+        linkedRequestId: linkedRequestId ? Number(linkedRequestId) : null,
       })
       toast('에셋이 등록되었습니다 🎉')
       navigate(created?.id ? `/assets/${created.id}` : '/assets')
@@ -299,6 +303,13 @@ export default function CreateAssetPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-slate-900 mb-6">에셋 등록</h1>
+
+      {linkedRequestId && (
+        <div className="mb-5 flex items-center gap-2 rounded-xl border border-[#869B7E]/40 bg-sage-50 px-4 py-3 text-sm text-[#42503d]">
+          <span className="text-base">🔗</span>
+          <span><b>요청 #{linkedRequestId}</b>의 완성물로 등록돼요. 등록하면 그 요청이 <b>완료</b>로 처리됩니다.</span>
+        </div>
+      )}
       {error && <p className="text-crimson-600 text-sm mb-3 whitespace-pre-line">{error}</p>}
 
       <form onSubmit={onSubmit} className="flex flex-col gap-5 bg-white border border-[#C9CAAC]/40 rounded-2xl p-6">

@@ -77,6 +77,9 @@ export default function RequestDetailPage() {
 
   const isMine = user && String(user.id) === String(req.requesterId)
   const canAccept = user && !isMine && !req.assigneeId && req.status === 'REQUESTED'
+  // 담당 제작자가 제작중이고 아직 완성물이 연결되지 않았으면 완성물(에셋) 등록 진입점을 준다.
+  // 에셋 작성 시 linkedRequestId 로 연결되면 백엔드가 요청을 자동 완료 처리한다.
+  const canComplete = user && String(user.id) === String(req.assigneeId) && req.status === 'IN_PROGRESS' && !req.linkedPostId
   const deadline = req.deadline ? new Date(req.deadline).toLocaleString('ko-KR') : null
 
   return (
@@ -130,6 +133,13 @@ export default function RequestDetailPage() {
             <StatusTimeline status={req.status} />
             {canAccept && (
               <Button size="sm" className="w-full justify-center mt-4" onClick={handleAccept}>이 요청 수락하기</Button>
+            )}
+            {canComplete && (
+              <>
+                <Button size="sm" className="w-full justify-center mt-4"
+                  onClick={() => navigate(`/assets/new?requestId=${id}`)}>✅ 완성물 에셋 등록하기</Button>
+                <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">등록하면 이 요청이 <b className="text-[#556350]">완료</b>로 바뀌고 요청자에게 알림이 가요.</p>
+              </>
             )}
           </div>
 
