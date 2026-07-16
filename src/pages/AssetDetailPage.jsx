@@ -8,6 +8,8 @@ import Spinner from '../components/Spinner'
 import Button from '../components/Button'
 import Badge from '../components/Badge'
 import Avatar from '../components/Avatar'
+import { useToast } from '../components/Toast'
+import { useConfirm } from '../components/ConfirmDialog'
 import CommentSection from '../features/post/CommentSection'
 
 // three.js 묶음은 무거우니 모델이 있을 때만 lazy 로드
@@ -41,6 +43,8 @@ export default function AssetDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [post, setPost] = useState(null)
   const [model, setModel] = useState(null)   // { url, ext } | null
   const [loading, setLoading] = useState(true)
@@ -92,12 +96,14 @@ export default function AssetDetailPage() {
   }
 
   async function handleDelete() {
-    if (!confirm('이 에셋을 삭제할까요?')) return
+    const ok = await confirm({ title: '에셋 삭제', message: '이 에셋을 삭제할까요?\n되돌릴 수 없어요.', confirmText: '삭제', danger: true })
+    if (!ok) return
     try {
       await postApi.remove(id)
+      toast('에셋이 삭제되었습니다')
       navigate('/assets')
     } catch (e) {
-      setError(e.message)
+      toast(e.message ?? '삭제에 실패했어요', 'error')
     }
   }
 
@@ -116,9 +122,10 @@ export default function AssetDetailPage() {
     try {
       setDownloadingId(fileId)
       const url = fileId ? await fileApi.getDownloadUrl(fileId) : file.accessUrl
-      if (url) triggerBrowserDownload(url)
+      if (url) { triggerBrowserDownload(url); toast('다운로드를 시작했어요') }
     } catch {
-      if (file.accessUrl) triggerBrowserDownload(file.accessUrl) // 실패 시 폴백(이름은 UUID일 수 있음)
+      if (file.accessUrl) { triggerBrowserDownload(file.accessUrl); toast('다운로드를 시작했어요') } // 실패 시 폴백(이름은 UUID일 수 있음)
+      else toast('다운로드에 실패했어요', 'error')
     } finally {
       setDownloadingId(null)
     }

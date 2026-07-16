@@ -6,6 +6,8 @@ import { STATUS, STATUS_FLOW, StatusBadge } from '../features/request/requestSta
 import Spinner from '../components/Spinner'
 import Button from '../components/Button'
 import UserName from '../components/UserName'
+import { useToast } from '../components/Toast'
+import { useConfirm } from '../components/ConfirmDialog'
 import CommentSection from '../features/post/CommentSection'
 import { formatDateTime } from '../utils/timeAgo'
 
@@ -44,6 +46,8 @@ export default function RequestDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [req, setReq] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -56,14 +60,15 @@ export default function RequestDetailPage() {
   }, [id])
 
   async function handleDelete() {
-    if (!confirm('이 요청글을 삭제할까요?')) return
-    try { await requestApi.remove(id); navigate('/requests') }
-    catch (e) { setError(e.message) }
+    const ok = await confirm({ title: '요청글 삭제', message: '이 요청글을 삭제할까요?\n되돌릴 수 없어요.', confirmText: '삭제', danger: true })
+    if (!ok) return
+    try { await requestApi.remove(id); toast('요청글이 삭제되었습니다'); navigate('/requests') }
+    catch (e) { toast(e.message ?? '삭제에 실패했어요', 'error') }
   }
 
   async function handleAccept() {
-    try { const updated = await requestApi.assign(id); setReq(updated) }
-    catch (e) { setError(e.message) }
+    try { const updated = await requestApi.assign(id); setReq(updated); toast('요청을 수락했어요 — 제작중으로 전환됐어요') }
+    catch (e) { toast(e.message ?? '수락에 실패했어요', 'error') }
   }
 
   if (loading) return <div className="flex justify-center py-20"><Spinner className="w-7 h-7" /></div>
