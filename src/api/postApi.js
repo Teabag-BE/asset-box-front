@@ -30,5 +30,7 @@ export const postApi = {
     request(`/posts/${id}`, {
       method: 'PUT',
       body: JSON.stringify({ title, content, categoryId, tags: tags ?? [] }),
+      // 백엔드가 수정 응답으로 엔티티를 직접 반환해 200+비JSON 이 올 수 있음 → 2xx면 성공 처리.
+      okOnNonJson: true,
     }),
 }
