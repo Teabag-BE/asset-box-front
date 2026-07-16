@@ -636,7 +636,8 @@ function MaterialLab({
   root, config, onConfigChange,
   partSelect, onTogglePartSelect, selectedMesh, onClearSelection,
 }) {
-  const [open, setOpen] = useState(true)
+  // 상세 진입 시 뷰어를 가리지 않도록 기본은 접힘(버튼으로 펼침) — 팀 피드백 반영.
+  const [open, setOpen] = useState(false)
   const texInputRef = useRef(null)
   const [customMapName, setCustomMapName] = useState(null)  // 첨부한 텍스처 파일명(표시/제거용)
 
