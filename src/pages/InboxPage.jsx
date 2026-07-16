@@ -45,17 +45,23 @@ export default function InboxPage() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold text-slate-900 mb-4">메시지</h1>
 
-      {/* 새 대화 시작 — 상대 userId로 시작 (포트폴리오의 "메시지 보내기"로도 진입) */}
-      <form onSubmit={startConversation} className="flex gap-2 mb-5">
-        <input
-          value={newId}
-          onChange={e => setNewId(e.target.value.replace(/[^0-9]/g, ''))}
-          placeholder="상대 userId 입력"
-          inputMode="numeric"
-          className="flex-1 rounded-lg border border-[#C9CAAC]/80 bg-white px-3 py-2 text-sm outline-none focus:border-[#869B7E]"
-        />
-        <Button type="submit" disabled={!newId.trim()}>대화 시작</Button>
-      </form>
+      {/* 새 대화 시작 — 크리에이터 목록에서 상대를 골라 시작(권장). userId 직접 입력도 지원. */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        <Link to="/directory"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#869B7E]/50 bg-sage-50 px-3 py-2 text-sm font-semibold text-[#556350] hover:bg-sage-100 transition-colors">
+          👥 크리에이터에서 상대 찾기
+        </Link>
+        <form onSubmit={startConversation} className="flex gap-2 flex-1 min-w-[220px]">
+          <input
+            value={newId}
+            onChange={e => setNewId(e.target.value.replace(/[^0-9]/g, ''))}
+            placeholder="또는 userId 직접 입력"
+            inputMode="numeric"
+            className="flex-1 rounded-lg border border-[#C9CAAC]/80 bg-white px-3 py-2 text-sm outline-none focus:border-[#869B7E]"
+          />
+          <Button type="submit" disabled={!newId.trim()}>대화 시작</Button>
+        </form>
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-16"><Spinner className="w-7 h-7" /></div>

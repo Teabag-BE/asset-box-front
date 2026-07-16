@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { STATUS, STATUS_FLOW, StatusBadge } from '../features/request/requestStatus'
 import Spinner from '../components/Spinner'
 import Button from '../components/Button'
-import UserName from '../components/UserName'
+import UserChip from '../components/UserChip'
 import { useToast } from '../components/Toast'
 import { useConfirm } from '../components/ConfirmDialog'
 import CommentSection from '../features/post/CommentSection'
@@ -145,12 +145,12 @@ export default function RequestDetailPage() {
 
           <div className="bg-white border border-[#C9CAAC]/40 rounded-2xl p-5 space-y-3">
             <div>
-              <p className="text-xs text-slate-400 mb-0.5">요청자</p>
-              <p className="text-sm font-medium text-slate-800"><UserName id={req.requesterId} /></p>
+              <p className="text-xs text-slate-400 mb-1">요청자</p>
+              <UserChip id={req.requesterId} />
             </div>
             <div>
-              <p className="text-xs text-slate-400 mb-0.5">담당 제작자</p>
-              <p className="text-sm font-medium text-slate-800">{req.assigneeId ? <UserName id={req.assigneeId} /> : '미배정'}</p>
+              <p className="text-xs text-slate-400 mb-1">담당 제작자</p>
+              {req.assigneeId ? <UserChip id={req.assigneeId} /> : <p className="text-sm font-medium text-slate-800">미배정</p>}
             </div>
             <div>
               <p className="text-xs text-slate-400 mb-0.5">요청 시각</p>

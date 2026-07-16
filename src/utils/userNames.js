@@ -24,3 +24,21 @@ export function resolveUserName(id) {
   }
   return cache.get(key)
 }
+
+// 프로필 전체(닉네임·전공·아바타 등)가 필요한 곳용 — UserChip 등. 이름 캐시와 별도로 캐시.
+const profileCache = new Map() // id -> Promise<profile|null>
+
+export function resolveUserProfile(id) {
+  if (id == null) return Promise.resolve(null)
+  const key = String(id)
+  if (!profileCache.has(key)) {
+    profileCache.set(
+      key,
+      userApi.getById(id).catch(() => {
+        profileCache.delete(key) // 실패는 캐시하지 않음
+        return null
+      }),
+    )
+  }
+  return profileCache.get(key)
+}
