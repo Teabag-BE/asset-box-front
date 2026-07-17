@@ -199,6 +199,8 @@ const LIGHTING_PRESETS = {
   day: { exposure: 1.0, background: null, useRoomEnv: false },
   // night: 어둡고 차가움. exposure 0.6, 어두운 남색 배경. 반사 환경은 유지(실루엣 방지).
   night: { exposure: 0.6, background: 0x0b1220, useRoomEnv: true },
+  // grid: 블렌더 뷰포트 느낌 — 짙은 회색 배경 + 바닥 그리드(모델 바닥 높이에 깔림).
+  grid: { exposure: 1.0, background: 0x393939, useRoomEnv: true },
 }
 
 function LightingRig({ preset = 'studio' }) {
@@ -239,6 +241,17 @@ function LightingRig({ preset = 'studio' }) {
     return (
       <>
         <directionalLight position={[8, 14, 6]} intensity={0.55} color={0xfff2e0} castShadow />
+      </>
+    )
+  }
+
+  if (preset === 'grid') {
+    // 블렌더 솔리드 뷰포트처럼 고르게 밝은 무채색 조명 — 그림자·색조 최소화.
+    return (
+      <>
+        <ambientLight intensity={0.75} />
+        <hemisphereLight intensity={0.45} color={0xffffff} groundColor={0x2e2e2e} />
+        <directionalLight position={[6, 10, 6]} intensity={0.6} color={0xffffff} />
       </>
     )
   }
@@ -599,6 +612,7 @@ const LIGHTING_OPTIONS = [
   { id: 'studio', label: '💡', title: '스튜디오 조명' },
   { id: 'day',    label: '☀️', title: '낮 조명' },
   { id: 'night',  label: '🌙', title: '밤 조명' },
+  { id: 'grid',   label: '🔳', title: '그리드 뷰포트 (블렌더풍)' },
 ]
 
 function LightingPicker({ value, onChange }) {
@@ -1175,6 +1189,8 @@ export default function AssetViewer360({
   const [lighting, setLighting]     = useState('studio')  // 'studio' | 'day' | 'night'
   const [loadedObj, setLoadedObj]   = useState(null)
   const [modelCenter, setModelCenter] = useState(null)
+  const [gridFloorY, setGridFloorY] = useState(0)  // 그리드 뷰포트 바닥 높이(모델 바닥에 맞춤)
+  const [gridScale, setGridScale] = useState(1)    // 모델 최대 치수(그리드 크기 산정용)
   const [embeddedLights, setEmbeddedLights] = useState(false)
   const [capturing, setCapturing]   = useState(false)
   const [lightMove, setLightMove]   = useState(false)  // 조명 이동 모드 on/off
@@ -1257,6 +1273,11 @@ export default function AssetViewer360({
     const box    = new THREE.Box3().setFromObject(obj)
     const center = box.getCenter(new THREE.Vector3())
     setModelCenter({ x: center.x, y: center.y, z: center.z })
+    // 그리드 바닥 높이: <Center>가 모델을 원점 중앙 정렬하므로 바닥 = -(높이/2).
+    // 그리드 크기도 모델 최대 치수에 비례시켜 아주 작거나 큰 모델에서도 자연스럽게.
+    const size = box.getSize(new THREE.Vector3())
+    setGridFloorY(-(size.y / 2))
+    setGridScale(Math.max(size.x, size.y, size.z) || 1)
   }
 
   function handleCaptureDone(blob) {
@@ -1362,6 +1383,26 @@ export default function AssetViewer360({
 
           {/* 마우스로 끌어 이동하는 인터랙티브 키라이트(조명 이동 모드일 때만) */}
           <MovableKeyLight angle={lightAngle} active={lightMove} />
+
+          {/* 블렌더풍 그리드 뷰포트 — 모델 바닥 높이에 그리드 + X(빨강)/Z(초록) 축선.
+              그리드/축선 크기는 모델 최대 치수에 비례(작든 크든 자연스럽게). */}
+          {lighting === 'grid' && (() => {
+            const gsize = Math.max(4, gridScale * 8)
+            const t = gsize * 0.0012
+            return (
+              <group position={[0, gridFloorY - gsize * 0.0005, 0]}>
+                <gridHelper args={[gsize, 80, 0x6f6f6f, 0x474747]} />
+                <mesh position={[0, t, 0]}>
+                  <boxGeometry args={[gsize, t, t * 1.6]} />
+                  <meshBasicMaterial color={0xbc4252} />
+                </mesh>
+                <mesh position={[0, t, 0]} rotation={[0, Math.PI / 2, 0]}>
+                  <boxGeometry args={[gsize, t, t * 1.6]} />
+                  <meshBasicMaterial color={0x6fa21c} />
+                </mesh>
+              </group>
+            )
+          })()}
 
           {/* 환경맵 우선순위: 로컬 드롭 환경맵 > 에셋 업로드 HDR > '낮' 프리셋 HDR(실제 하늘) > RoomEnvironment.
               드롭한 환경맵이 있으면 그것이 배경+반사를 담당한다.
