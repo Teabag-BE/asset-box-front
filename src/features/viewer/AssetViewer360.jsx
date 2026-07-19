@@ -1287,11 +1287,68 @@ export default function AssetViewer360({
     if (e.currentTarget.contains(e.relatedTarget)) return
     setEnvDragging(false)
   }
+  // 모션 파일(믹사모 애니메이션 FBX/GLB) 드롭 → 클립 추출 → 현재 캐릭터로 리타게팅해 재생 목록에 추가.
+  const MOTION_EXTS = ['fbx', 'glb', 'gltf']
+
+  async function applyMotionFile(file) {
+    if (!file || !loadedObj) return false
+    const name = file.name || 'motion'
+    const dot = name.lastIndexOf('.')
+    const fileExt = dot >= 0 ? name.slice(dot + 1).toLowerCase() : ''
+    if (!MOTION_EXTS.includes(fileExt)) return false
+    const url = URL.createObjectURL(file)
+    try {
+      const isFbx = fileExt === 'fbx'
+      const loaded = isFbx
+        ? await new FBXLoader().loadAsync(url)
+        : await new GLTFLoader().loadAsync(url)
+      const motionRoot = isFbx ? loaded : loaded.scene
+      const anims = (isFbx ? loaded.animations : loaded.animations) ?? []
+      if (anims.length === 0) {
+        console.warn('[뷰어] 드롭한 파일에 애니메이션이 없습니다:', name)
+        return false
+      }
+      const base = name.slice(0, dot > 0 ? dot : name.length)
+      const done = anims
+        .map((c, i) => {
+          const out = retargetMixamoClip(c, motionRoot, loadedObj)
+          if (!out) return null
+          // 믹사모 클립 이름은 'mixamo.com' 처럼 무의미한 경우가 많아 파일명으로 개명.
+          if (!out.name || /mixamo\.com|take ?\d+/i.test(out.name)) {
+            out.name = anims.length > 1 ? `${base} ${i + 1}` : base
+          }
+          return out
+        })
+        .filter(Boolean)
+      if (done.length === 0) {
+        console.warn('[뷰어] 모션 리타게팅 실패 — 본 매칭 안 됨:', name)
+        return false
+      }
+      setClips(prev => {
+        const next = [...prev, ...done]
+        setClipIdx(prev.length)   // 방금 추가한 첫 클립 선택
+        return next
+      })
+      setAnimPlaying(true)
+      setCanRetarget(false)
+      return true
+    } catch (e) {
+      console.warn('[뷰어] 모션 파일 로드 실패:', e)
+      return false
+    } finally {
+      try { URL.revokeObjectURL(url) } catch { /* 무시 */ }
+    }
+  }
+
   function handleEnvDrop(e) {
     if (!isFileDrag(e)) return
     e.preventDefault()
     setEnvDragging(false)
     const file = e.dataTransfer.files?.[0]
+    if (!file) return
+    const ext = (file.name || '').split('.').pop()?.toLowerCase() ?? ''
+    // 모션 파일이면 리타게팅, 아니면 환경맵으로 처리.
+    if (MOTION_EXTS.includes(ext)) { applyMotionFile(file); return }
     applyEnvFile(file)
   }
 
@@ -1445,8 +1502,8 @@ export default function AssetViewer360({
           color: '#3f5238', fontWeight: 700, gap: 6,
         }}>
           <span style={{ fontSize: 34 }}>🌅</span>
-          <span style={{ fontSize: 14 }}>환경맵을 여기에 놓으세요</span>
-          <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>.hdr · .exr · .jpg · .png (등장방형)</span>
+          <span style={{ fontSize: 14 }}>환경맵 또는 모션 파일을 여기에 놓으세요</span>
+          <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>환경맵: .hdr · .exr · 이미지 / 모션: .fbx · .glb (믹사모 애니메이션)</span>
         </div>
       )}
 
