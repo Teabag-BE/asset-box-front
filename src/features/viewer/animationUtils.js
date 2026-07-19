@@ -59,6 +59,14 @@ export function isRetargetableHumanoid(root) {
   return (keys.has('hips') && (keys.has('spine') || keys.has('spine1'))) || isBlenderStyleRig(keys)
 }
 
+// 팔 델타 감쇠 — 체형(어깨폭·rest 각도) 차이로 소스의 팔 회전을 100% 이식하면
+// 팔이 몸에 파고든다. 위팔/어깨 델타를 일부만 적용해 T포즈와 목표 포즈 사이의
+// 자연스러운 지점에 멈추게 한다(1=전부 적용, 0=rest 유지).
+const DELTA_KEEP = {
+  leftarm: 0.8,       rightarm: 0.8,       // 위팔
+  leftshoulder: 0.9,  rightshoulder: 0.9,  // 어깨(쇄골)
+}
+
 /**
  * 믹사모 계열 클립을 target 스켈레톤으로 리타게팅(로컬 델타 + basis 보정).
  * @returns {THREE.AnimationClip|null} 유효 트랙이 없으면 null
@@ -94,6 +102,7 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
     const tmp = new THREE.Quaternion()
     const wS = new THREE.Quaternion()
     const wT = new THREE.Quaternion()
+    const IDENTITY = new THREE.Quaternion()
 
     const tracks = []
     for (const track of clip.tracks) {
@@ -119,10 +128,12 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
       const C = wS.clone().invert().multiply(wT)
       const Cinv = C.clone().invert()
 
+      const keep = DELTA_KEEP[key] ?? 1
       const v = t.values
       for (let i = 0; i + 3 < v.length; i += 4) {
         qs.set(v[i], v[i + 1], v[i + 2], v[i + 3])
         delta.copy(qsRestInv).multiply(qs)              // 소스 로컬 delta
+        if (keep < 1) delta.slerp(IDENTITY, 1 - keep)   // 팔/어깨는 델타 일부만(파고듦 방지)
         tmp.copy(Cinv).multiply(delta).multiply(C)      // 타깃 로컬축으로 변환(delta 와 다른 인스턴스 사용)
         tmp.premultiply(qtRest)                         // qtRest · (보정된 delta)
         v[i] = tmp.x; v[i + 1] = tmp.y; v[i + 2] = tmp.z; v[i + 3] = tmp.w
