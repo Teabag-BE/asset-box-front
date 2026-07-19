@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { messageApi } from '../api/messageApi'
+import { userApi } from '../api/userApi'
 import { resolveUserName } from '../utils/userNames'
 import Spinner from '../components/Spinner'
 import Avatar from '../components/Avatar'
@@ -35,10 +36,30 @@ export default function InboxPage() {
     return () => { active = false; clearInterval(id) }
   }, [])
 
-  function startConversation(e) {
+  const [searchResults, setSearchResults] = useState(null) // null=검색 안 함, []=결과 없음
+  const [searchMsg, setSearchMsg] = useState('')
+  const [searching, setSearching] = useState(false)
+
+  // 닉네임 또는 userId 로 상대 찾기 — 숫자만이면 바로 대화방, 아니면 닉네임 검색.
+  async function startConversation(e) {
     e.preventDefault()
-    const id = newId.trim()
-    if (id) navigate(`/messages/${id}`)
+    const q = newId.trim()
+    if (!q) return
+    if (/^\d+$/.test(q)) { navigate(`/messages/${q}`); return }
+    setSearching(true)
+    setSearchMsg('')
+    try {
+      const found = await userApi.search(q)
+      const list = Array.isArray(found) ? found : (found?.users ?? [])
+      setSearchResults(list)
+      if (list.length === 0) setSearchMsg(`'${q}' 닉네임의 유저를 찾지 못했어요.`)
+    } catch {
+      // 백엔드 검색 API 배포 전 — 정직하게 안내하고 기존 경로(크리에이터/직접 입력)로 유도.
+      setSearchResults(null)
+      setSearchMsg('닉네임 검색은 서버 업데이트 후 지원돼요. 지금은 크리에이터 목록에서 찾거나 userId를 입력해주세요.')
+    } finally {
+      setSearching(false)
+    }
   }
 
   return (
@@ -54,14 +75,30 @@ export default function InboxPage() {
         <form onSubmit={startConversation} className="flex gap-2 flex-1 min-w-[220px]">
           <input
             value={newId}
-            onChange={e => setNewId(e.target.value.replace(/[^0-9]/g, ''))}
-            placeholder="또는 userId 직접 입력"
-            inputMode="numeric"
+            onChange={e => { setNewId(e.target.value); setSearchResults(null); setSearchMsg('') }}
+            placeholder="닉네임 검색 또는 userId 입력"
             className="flex-1 rounded-lg border border-[#C9CAAC]/80 bg-white px-3 py-2 text-sm outline-none focus:border-[#869B7E]"
           />
-          <Button type="submit" disabled={!newId.trim()}>대화 시작</Button>
+          <Button type="submit" loading={searching} disabled={!newId.trim()}>찾기</Button>
         </form>
       </div>
+
+      {searchMsg && <p className="text-xs text-slate-500 -mt-2 mb-4">{searchMsg}</p>}
+      {searchResults?.length > 0 && (
+        <div className="mb-5 bg-white border border-[#C9CAAC]/40 rounded-xl divide-y divide-[#C9CAAC]/30 overflow-hidden">
+          {searchResults.map(u => (
+            <button key={u.id} type="button" onClick={() => navigate(`/messages/${u.id}`)}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-linen-50 transition-colors text-left">
+              <Avatar src={u.avatarUrl} nickname={u.nickname} size="md" />
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-slate-800 truncate">{u.nickname}</span>
+                {u.major && <span className="block text-xs text-slate-400">{u.major}</span>}
+              </span>
+              <span className="ml-auto text-xs text-[#556350]">💬 대화</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-16"><Spinner className="w-7 h-7" /></div>

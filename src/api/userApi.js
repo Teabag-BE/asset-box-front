@@ -5,6 +5,8 @@ export const userApi = {
   me: () => request('/users/me'),
   // 특정 유저 프로필
   getById: (id) => request(`/users/${id}`),
+  // 닉네임으로 유저 검색 — 백엔드 GET /users/search 배포 전이면 실패(호출부에서 안내 처리).
+  search: (query) => request(`/users/search?query=${encodeURIComponent(query)}`),
   // 내 프로필 수정 (닉네임/소개/전공/공개이메일) — 백엔드 PUT /users/me
   updateMe: ({ nickname, description, major, publicEmail }) =>
     request('/users/me', {

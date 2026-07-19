@@ -5,6 +5,7 @@ import { userApi } from '../api/userApi'
 import Avatar from '../components/Avatar'
 import EmptyState from '../components/EmptyState'
 import Spinner from '../components/Spinner'
+import DirectoryTabs from '../features/post/DirectoryTabs'
 
 // 백엔드에 유저 목록 API가 없어, 에셋 작성자들을 모아 디렉토리를 구성(클라이언트).
 // 유저목록 API 생기면 그걸로 교체.
@@ -38,6 +39,7 @@ export default function DirectoryPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
+      <DirectoryTabs />
       <h1 className="text-2xl font-bold text-slate-900">크리에이터 디렉토리</h1>
       <p className="text-sm text-slate-500 mt-1 mb-5">제작자 포트폴리오를 한눈에 확인하세요.</p>
 
