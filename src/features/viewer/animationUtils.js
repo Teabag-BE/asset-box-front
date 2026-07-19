@@ -2,10 +2,14 @@ import * as THREE from 'three'
 
 // ── 스켈레탈 애니메이션 유틸 ─────────────────────────────────────────────
 // 1) 모델에 내장된 클립 재생은 AnimationMixer 로 그대로.
-// 2) 클립이 없는 캐릭터라도 믹사모 계열 휴머노이드 본 구조면, 번들된 기본 모션
-//    (idle/walk/run)을 "본 이름 매칭"으로 리타게팅해 입힌다.
-//    - 회전 트랙만 옮기고(로컬 회전은 체형이 달라도 안전), 위치 트랙은 hips 만
-//      체형 비율로 스케일해 유지한다(발이 뜨거나 꺼지는 것 방지).
+// 2) 클립이 없는 캐릭터라도 휴머노이드 본 구조(믹사모/블렌더 리그)면, 번들 기본 모션
+//    (idle/walk/run)을 리타게팅해 입힌다.
+//    방식: "로컬 델타 + 본 축(basis) 보정" —
+//      delta = qsRest⁻¹ · qs(t)               (소스 본의 rest 대비 회전 변화량)
+//      qt(t) = qtRest · C⁻¹ · delta · C       (C = 소스↔타깃 본 로컬축 변환, rest 월드 회전으로 산출)
+//    회전 트랙만 이식(위치는 단위계 차이로 위험). 동일 리그면 C≈항등이라 원래 동작과 같다.
+//    (SkeletonUtils.retargetClip 은 이 FBX 루트 변환 케이스에서 팔이 뒤집혀 채택하지 않음 —
+//     세 방식을 본 월드좌표 수치 비교로 검증해 이 방식을 채택함)
 
 // 본 이름 정규화: 대소문자/구분자/mixamorig 접두 제거.
 // 예: "mixamorig:Hips" / "mixamorigHips" / "Hips" → "hips"
@@ -56,41 +60,40 @@ export function isRetargetableHumanoid(root) {
 }
 
 /**
- * 믹사모 계열 클립을 target 스켈레톤으로 리타게팅.
- * 본 이름을 정규화 키로 매칭해 트랙을 개명한다. 매칭 안 되는 트랙은 버림.
+ * 믹사모 계열 클립을 target 스켈레톤으로 리타게팅(로컬 델타 + basis 보정).
  * @returns {THREE.AnimationClip|null} 유효 트랙이 없으면 null
  */
 export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
   try {
-    const targetByKey = new Map()
-    for (const b of collectBones(targetRoot)) {
-      const k = normalizeBoneKey(b.name)
-      if (!targetByKey.has(k)) targetByKey.set(k, b)
-    }
-    // 블렌더 리그면 믹사모 키 → 블렌더 키 별칭으로 한 번 더 찾아본다.
-    const blender = isBlenderStyleRig(new Set(targetByKey.keys()))
-    const resolveTarget = (key) => targetByKey.get(key)
-      ?? (blender && BLENDER_ALIASES[key] ? targetByKey.get(BLENDER_ALIASES[key]) : undefined)
-
-    const tgtHips = resolveTarget('hips')
-    if (!tgtHips) return null
+    // rest 월드 회전(C 산출)에 최신 월드행렬 필요.
+    sourceRoot?.updateMatrixWorld?.(true)
+    targetRoot?.updateMatrixWorld?.(true)
 
     const sourceByKey = new Map()
     for (const b of collectBones(sourceRoot)) {
       const k = normalizeBoneKey(b.name)
       if (!sourceByKey.has(k)) sourceByKey.set(k, b)
     }
-    const srcHips = sourceByKey.get('hips')
-    // 체형(키) 비율 — hips 의 rest 높이 비. 산정 불가하면 1(스케일 안 함).
-    const scale = (srcHips && Math.abs(srcHips.position.y) > 1e-6 && Math.abs(tgtHips.position.y) > 1e-6)
-      ? Math.abs(tgtHips.position.y) / Math.abs(srcHips.position.y)
-      : 1
+    if (!sourceByKey.has('hips')) return null
 
-    // rest-pose 보정용 임시 쿼터니언 (트랙 키프레임마다 재사용)
+    const targetByKey = new Map()
+    for (const b of collectBones(targetRoot)) {
+      const k = normalizeBoneKey(b.name)
+      if (!targetByKey.has(k)) targetByKey.set(k, b)
+    }
+    // 블렌더 리그면 별칭이 우선 — 'spine'을 믹사모 spine 에 직접 매칭시키면
+    // hips 매핑이 사라지고 척추 체인이 한 칸씩 밀린다(spine→hips 가 정답).
+    const blender = isBlenderStyleRig(new Set(targetByKey.keys()))
+    const resolveTarget = (key) => blender
+      ? (targetByKey.get(BLENDER_ALIASES[key] ?? '') ?? targetByKey.get(key))
+      : targetByKey.get(key)
+    if (!resolveTarget('hips')) return null
+
     const qs = new THREE.Quaternion()
-    const qsRestInv = new THREE.Quaternion()
-    const qtRest = new THREE.Quaternion()
-    const out = new THREE.Quaternion()
+    const delta = new THREE.Quaternion()
+    const tmp = new THREE.Quaternion()
+    const wS = new THREE.Quaternion()
+    const wT = new THREE.Quaternion()
 
     const tracks = []
     for (const track of clip.tracks) {
@@ -98,36 +101,35 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
       if (dot < 0) continue
       const nodeName = track.name.slice(0, dot)
       const prop = track.name.slice(dot + 1)
+      if (prop !== 'quaternion') continue  // 위치/스케일 트랙은 단위계·체형 차이로 위험 → 회전만
       const key = normalizeBoneKey(nodeName)
+      const src = sourceByKey.get(key)
       const target = resolveTarget(key)
-      if (!target) continue
+      if (!src || !target) continue
 
-      if (prop === 'quaternion') {
-        const t = track.clone()
-        t.name = `${target.name}.quaternion`
-        // 본 로컬 축이 리그마다 달라 회전을 그대로 복사하면 팔다리가 꼬인다.
-        // rest 대비 변화량만 이식: qt(t) = qtRest · qsRest⁻¹ · qs(t)
-        const src = sourceByKey.get(key)
-        if (src && target.quaternion) {
-          qsRestInv.copy(src.quaternion).invert()
-          qtRest.copy(target.quaternion)
-          const v = t.values
-          for (let i = 0; i + 3 < v.length; i += 4) {
-            qs.set(v[i], v[i + 1], v[i + 2], v[i + 3])
-            out.copy(qtRest).multiply(qsRestInv).multiply(qs)
-            v[i] = out.x; v[i + 1] = out.y; v[i + 2] = out.z; v[i + 3] = out.w
-          }
-        }
-        tracks.push(t)
-      } else if (prop === 'position' && key === 'hips') {
-        const t = track.clone()
-        t.name = `${target.name}.position`
-        for (let i = 0; i < t.values.length; i++) t.values[i] *= scale
-        tracks.push(t)
+      const t = track.clone()
+      t.values = track.values.slice()  // clone() 은 values 를 참조 공유하므로 원본 보호
+      t.name = `${target.name}.quaternion`
+
+      const qsRestInv = src.quaternion.clone().invert()
+      const qtRest = target.quaternion.clone()
+      // C: 타깃 본 로컬축 → 소스 본 로컬축 (rest 월드 회전 기준)
+      src.getWorldQuaternion(wS)
+      target.getWorldQuaternion(wT)
+      const C = wS.clone().invert().multiply(wT)
+      const Cinv = C.clone().invert()
+
+      const v = t.values
+      for (let i = 0; i + 3 < v.length; i += 4) {
+        qs.set(v[i], v[i + 1], v[i + 2], v[i + 3])
+        delta.copy(qsRestInv).multiply(qs)              // 소스 로컬 delta
+        tmp.copy(Cinv).multiply(delta).multiply(C)      // 타깃 로컬축으로 변환(delta 와 다른 인스턴스 사용)
+        tmp.premultiply(qtRest)                         // qtRest · (보정된 delta)
+        v[i] = tmp.x; v[i + 1] = tmp.y; v[i + 2] = tmp.z; v[i + 3] = tmp.w
       }
-      // 그 외 position/scale 트랙은 체형 왜곡을 만들므로 버린다.
+      tracks.push(t)
     }
-    if (tracks.length === 0) return null
+    if (tracks.length < 8) return null  // 팔다리도 못 잡으면 포기
     return new THREE.AnimationClip(clip.name || 'motion', clip.duration, tracks)
   } catch (e) {
     console.warn('[animationUtils] retargetMixamoClip 실패:', e)
