@@ -1238,6 +1238,7 @@ export default function AssetViewer360({
   const dragRef = useRef(null)  // 드래그 시작점 { x, y, az, el }
   const envFileInputRef = useRef(null)  // 환경맵 파일 선택 input
   const customEnvUrlRef = useRef(null)  // 현재 커스텀 환경맵 blob URL(언마운트 정리용, 항상 최신값 유지)
+  const restPoseRef = useRef(null)  // 로드 시점 본 rest 포즈 — 리타게팅 기준 포즈 복원용(#158)
 
   const ext = fileExtension?.toLowerCase()
 
@@ -1290,6 +1291,19 @@ export default function AssetViewer360({
   // 모션 파일(믹사모 애니메이션 FBX/GLB) 드롭 → 클립 추출 → 현재 캐릭터로 리타게팅해 재생 목록에 추가.
   const MOTION_EXTS = ['fbx', 'glb', 'gltf']
 
+  // 리타게팅 직전 호출 — 본을 로드 시점 rest 포즈로 되돌린다(#158).
+  // 재생 중인 mixer 는 다음 프레임에 다시 포즈를 잡으므로 화면 깜빡임은 없다.
+  function restoreRestPose() {
+    const saved = restPoseRef.current
+    if (!saved || saved.root !== loadedObj) return
+    for (const { bone, position, quaternion, scale } of saved.bones) {
+      bone.position.copy(position)
+      bone.quaternion.copy(quaternion)
+      bone.scale.copy(scale)
+    }
+    loadedObj.updateMatrixWorld(true)
+  }
+
   async function applyMotionFile(file) {
     if (!file || !loadedObj) return false
     const name = file.name || 'motion'
@@ -1309,6 +1323,7 @@ export default function AssetViewer360({
         return false
       }
       const base = name.slice(0, dot > 0 ? dot : name.length)
+      restoreRestPose()
       const done = anims
         .map((c, i) => {
           const out = retargetMixamoClip(c, motionRoot, loadedObj)
@@ -1361,6 +1376,14 @@ export default function AssetViewer360({
 
   function handleLoaded(obj, animations = []) {
     setLoadedObj(obj)
+    // 리타게팅은 본의 "현재 포즈"를 rest 로 읽으므로, 애니메이션 재생 중에 모션을
+    // 추가하면 재생 프레임을 rest 로 오인해 회차마다 꼬임이 누적된다.
+    // 로드 직후(바인드 포즈) 상태를 저장해 두고 리타게팅 직전에 복원한다.
+    const rest = []
+    obj.traverse(o => {
+      if (o.isBone) rest.push({ bone: o, position: o.position.clone(), quaternion: o.quaternion.clone(), scale: o.scale.clone() })
+    })
+    restPoseRef.current = { root: obj, bones: rest }
     const box    = new THREE.Box3().setFromObject(obj)
     const center = box.getCenter(new THREE.Vector3())
     setModelCenter({ x: center.x, y: center.y, z: center.z })
@@ -1402,6 +1425,7 @@ export default function AssetViewer360({
           const ia = order.indexOf(a.name?.toLowerCase?.()), ib = order.indexOf(b.name?.toLowerCase?.())
           return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)
         })
+      restoreRestPose()
       const done = pool
         .map(c => retargetMixamoClip(c, gltf.scene, loadedObj))
         .filter(Boolean)
