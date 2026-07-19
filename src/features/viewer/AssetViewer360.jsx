@@ -12,7 +12,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
-import { isRetargetableHumanoid, retargetMixamoClip } from './animationUtils'
+import { isRetargetableHumanoid, retargetMixamoClip, collectRigNodes } from './animationUtils'
 
 // 실험실에서 바꾼 재질이 반영된 현재 모델(root)을 .glb 로 내보내 다운로드한다.
 function downloadModifiedGlb(root, onError) {
@@ -1379,10 +1379,10 @@ export default function AssetViewer360({
     // 리타게팅은 본의 "현재 포즈"를 rest 로 읽으므로, 애니메이션 재생 중에 모션을
     // 추가하면 재생 프레임을 rest 로 오인해 회차마다 꼬임이 누적된다.
     // 로드 직후(바인드 포즈) 상태를 저장해 두고 리타게팅 직전에 복원한다.
-    const rest = []
-    obj.traverse(o => {
-      if (o.isBone) rest.push({ bone: o, position: o.position.clone(), quaternion: o.quaternion.clone(), scale: o.scale.clone() })
-    })
+    // 본 + 리그 루트(metarig 등) — 루트 모션 트랙이 리그 루트를 움직이므로 함께 저장/복원.
+    const rest = collectRigNodes(obj).map(o => ({
+      bone: o, position: o.position.clone(), quaternion: o.quaternion.clone(), scale: o.scale.clone(),
+    }))
     restPoseRef.current = { root: obj, bones: rest }
     const box    = new THREE.Box3().setFromObject(obj)
     const center = box.getCenter(new THREE.Vector3())
