@@ -28,6 +28,18 @@ export function collectBones(root) {
   return bones
 }
 
+// 본 + 리그 루트(본을 직계 자식으로 가진 노드, 예: 블렌더 'metarig' 아마추어).
+// 믹사모가 자기 캐릭터 FBX 의 루트 이동을 이 노드의 position 트랙에 싣는다.
+export function collectRigNodes(root) {
+  const nodes = []
+  try {
+    root?.traverse?.(o => {
+      if (o.isBone || o.children?.some?.(c => c.isBone)) nodes.push(o)
+    })
+  } catch { /* 무시 */ }
+  return nodes
+}
+
 // 믹사모 표준 키 → 블렌더(Rigify류) 리그 키 별칭.
 // 블렌더 휴머노이드는 hips 가 없고 spine 이 루트, spine.001~005 가 척추~머리로 이어진다.
 // (FBXLoader 가 '.'과 ':' 를 제거하므로 정규화 키 기준으로 매핑)
@@ -98,6 +110,17 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
       const k = normalizeBoneKey(b.name)
       if (!targetByKey.has(k)) targetByKey.set(k, b)
     }
+    // 리그 루트 포함 노드 맵 — 같은 이름 노드(= 같은 리그)의 루트 모션 통과용.
+    const sourceNodeByKey = new Map()
+    for (const n of collectRigNodes(sourceRoot)) {
+      const k = normalizeBoneKey(n.name)
+      if (!sourceNodeByKey.has(k)) sourceNodeByKey.set(k, n)
+    }
+    const targetNodeByKey = new Map()
+    for (const n of collectRigNodes(targetRoot)) {
+      const k = normalizeBoneKey(n.name)
+      if (!targetNodeByKey.has(k)) targetNodeByKey.set(k, n)
+    }
     // 블렌더 리그면 별칭이 우선 — 'spine'을 믹사모 spine 에 직접 매칭시키면
     // hips 매핑이 사라지고 척추 체인이 한 칸씩 밀린다(spine→hips 가 정답).
     const blender = isBlenderStyleRig(new Set(targetByKey.keys()))
@@ -119,13 +142,38 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
       if (dot < 0) continue
       const nodeName = track.name.slice(0, dot)
       const prop = track.name.slice(dot + 1)
-      if (prop !== 'quaternion') continue  // 위치/스케일 트랙은 단위계·체형 차이로 위험 → 회전만
       const key = normalizeBoneKey(nodeName)
+      // 루트 모션(위치): 양쪽에 같은 이름의 노드가 있으면(= 같은 리그, 같은 단위계)
+      // 그대로 이식한다. 카포에이라처럼 몸 전체가 이동하는 모션이 제자리에 고정되는 것 방지.
+      // 교차 리그는 단위계·체형 차이로 위험해 기존대로 위치를 버린다.
+      if (prop === 'position') {
+        const sN = sourceNodeByKey.get(key)
+        const tN = targetNodeByKey.get(key)
+        if (sN && tN && sN.name === tN.name) {
+          const t = track.clone()
+          t.values = track.values.slice()
+          t.name = `${tN.name}.position`
+          tracks.push(t)
+        }
+        continue
+      }
+      if (prop !== 'quaternion') continue  // 스케일 트랙은 이식하지 않는다
       // 블렌더 리그 소스면 믹사모 표준 키로 환산해 타깃을 찾는다(동일 리그면 이름 그대로도 매칭).
       const canon = srcBlender ? (MIXAMO_FROM_BLENDER[key] ?? key) : key
       const src = sourceByKey.get(key)
       const target = resolveTarget(canon) ?? targetByKey.get(key)
-      if (!src || !target) continue
+      if (!src || !target) {
+        // 본이 아닌 리그 루트(예: metarig)의 회전 트랙도 같은 이름이면 그대로 통과.
+        const sN = sourceNodeByKey.get(key)
+        const tN = targetNodeByKey.get(key)
+        if (sN && tN && sN.name === tN.name && !sN.isBone) {
+          const t = track.clone()
+          t.values = track.values.slice()
+          t.name = `${tN.name}.quaternion`
+          tracks.push(t)
+        }
+        continue
+      }
 
       const t = track.clone()
       t.values = track.values.slice()  // clone() 은 values 를 참조 공유하므로 원본 보호
