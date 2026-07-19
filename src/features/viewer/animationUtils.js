@@ -24,10 +24,35 @@ export function collectBones(root) {
   return bones
 }
 
-// 리타게팅 가능한 휴머노이드인가 — hips + spine 본이 있으면 시도할 가치가 있다.
+// 믹사모 표준 키 → 블렌더(Rigify류) 리그 키 별칭.
+// 블렌더 휴머노이드는 hips 가 없고 spine 이 루트, spine.001~005 가 척추~머리로 이어진다.
+// (FBXLoader 가 '.'과 ':' 를 제거하므로 정규화 키 기준으로 매핑)
+const BLENDER_ALIASES = {
+  hips: 'spine',
+  spine: 'spine001',
+  spine1: 'spine002',
+  spine2: 'spine003',
+  neck: 'spine004',
+  head: 'spine005',
+  leftshoulder: 'shoulderl',  rightshoulder: 'shoulderr',
+  leftarm: 'upperarml',       rightarm: 'upperarmr',
+  leftforearm: 'forearml',    rightforearm: 'forearmr',
+  lefthand: 'handl',          righthand: 'handr',
+  leftupleg: 'thighl',        rightupleg: 'thighr',
+  leftleg: 'shinl',           rightleg: 'shinr',
+  leftfoot: 'footl',          rightfoot: 'footr',
+  lefttoebase: 'toel',        righttoebase: 'toer',
+}
+
+// 이 리그가 블렌더(Rigify류) 이름 체계인가 — hips 없이 spine+spine001 이 척추 체인.
+function isBlenderStyleRig(keys) {
+  return !keys.has('hips') && keys.has('spine') && keys.has('spine001') && (keys.has('thighl') || keys.has('thighr'))
+}
+
+// 리타게팅 가능한 휴머노이드인가 — 믹사모 표준(hips+spine) 또는 블렌더 리그면 시도.
 export function isRetargetableHumanoid(root) {
   const keys = new Set(collectBones(root).map(b => normalizeBoneKey(b.name)))
-  return keys.has('hips') && (keys.has('spine') || keys.has('spine1'))
+  return (keys.has('hips') && (keys.has('spine') || keys.has('spine1'))) || isBlenderStyleRig(keys)
 }
 
 /**
@@ -42,14 +67,30 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
       const k = normalizeBoneKey(b.name)
       if (!targetByKey.has(k)) targetByKey.set(k, b)
     }
-    const tgtHips = targetByKey.get('hips')
+    // 블렌더 리그면 믹사모 키 → 블렌더 키 별칭으로 한 번 더 찾아본다.
+    const blender = isBlenderStyleRig(new Set(targetByKey.keys()))
+    const resolveTarget = (key) => targetByKey.get(key)
+      ?? (blender && BLENDER_ALIASES[key] ? targetByKey.get(BLENDER_ALIASES[key]) : undefined)
+
+    const tgtHips = resolveTarget('hips')
     if (!tgtHips) return null
 
-    const srcHips = collectBones(sourceRoot).find(b => normalizeBoneKey(b.name) === 'hips')
+    const sourceByKey = new Map()
+    for (const b of collectBones(sourceRoot)) {
+      const k = normalizeBoneKey(b.name)
+      if (!sourceByKey.has(k)) sourceByKey.set(k, b)
+    }
+    const srcHips = sourceByKey.get('hips')
     // 체형(키) 비율 — hips 의 rest 높이 비. 산정 불가하면 1(스케일 안 함).
     const scale = (srcHips && Math.abs(srcHips.position.y) > 1e-6 && Math.abs(tgtHips.position.y) > 1e-6)
       ? Math.abs(tgtHips.position.y) / Math.abs(srcHips.position.y)
       : 1
+
+    // rest-pose 보정용 임시 쿼터니언 (트랙 키프레임마다 재사용)
+    const qs = new THREE.Quaternion()
+    const qsRestInv = new THREE.Quaternion()
+    const qtRest = new THREE.Quaternion()
+    const out = new THREE.Quaternion()
 
     const tracks = []
     for (const track of clip.tracks) {
@@ -58,12 +99,25 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
       const nodeName = track.name.slice(0, dot)
       const prop = track.name.slice(dot + 1)
       const key = normalizeBoneKey(nodeName)
-      const target = targetByKey.get(key)
+      const target = resolveTarget(key)
       if (!target) continue
 
       if (prop === 'quaternion') {
         const t = track.clone()
         t.name = `${target.name}.quaternion`
+        // 본 로컬 축이 리그마다 달라 회전을 그대로 복사하면 팔다리가 꼬인다.
+        // rest 대비 변화량만 이식: qt(t) = qtRest · qsRest⁻¹ · qs(t)
+        const src = sourceByKey.get(key)
+        if (src && target.quaternion) {
+          qsRestInv.copy(src.quaternion).invert()
+          qtRest.copy(target.quaternion)
+          const v = t.values
+          for (let i = 0; i + 3 < v.length; i += 4) {
+            qs.set(v[i], v[i + 1], v[i + 2], v[i + 3])
+            out.copy(qtRest).multiply(qsRestInv).multiply(qs)
+            v[i] = out.x; v[i + 1] = out.y; v[i + 2] = out.z; v[i + 3] = out.w
+          }
+        }
         tracks.push(t)
       } else if (prop === 'position' && key === 'hips') {
         const t = track.clone()
