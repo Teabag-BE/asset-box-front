@@ -48,6 +48,13 @@ const BLENDER_ALIASES = {
   lefttoebase: 'toel',        righttoebase: 'toer',
 }
 
+// 역방향: 블렌더 리그 키 → 믹사모 표준 키.
+// 믹사모에 자기 캐릭터(블렌더 리그)를 업로드해 받은 애니메이션 FBX 는 소스 본 이름이
+// mixamorig 가 아니라 캐릭터 원래 이름(spine, spine001, thighl…)이라 이 역매핑이 필요하다.
+const MIXAMO_FROM_BLENDER = Object.fromEntries(
+  Object.entries(BLENDER_ALIASES).map(([mixamo, blender]) => [blender, mixamo])
+)
+
 // 이 리그가 블렌더(Rigify류) 이름 체계인가 — hips 없이 spine+spine001 이 척추 체인.
 function isBlenderStyleRig(keys) {
   return !keys.has('hips') && keys.has('spine') && keys.has('spine001') && (keys.has('thighl') || keys.has('thighr'))
@@ -82,7 +89,9 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
       const k = normalizeBoneKey(b.name)
       if (!sourceByKey.has(k)) sourceByKey.set(k, b)
     }
-    if (!sourceByKey.has('hips')) return null
+    // 소스가 블렌더 리그(믹사모에 자기 캐릭터 업로드 후 받은 FBX)여도 허용.
+    const srcBlender = isBlenderStyleRig(new Set(sourceByKey.keys()))
+    if (!sourceByKey.has('hips') && !srcBlender) return null
 
     const targetByKey = new Map()
     for (const b of collectBones(targetRoot)) {
@@ -112,8 +121,10 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
       const prop = track.name.slice(dot + 1)
       if (prop !== 'quaternion') continue  // 위치/스케일 트랙은 단위계·체형 차이로 위험 → 회전만
       const key = normalizeBoneKey(nodeName)
+      // 블렌더 리그 소스면 믹사모 표준 키로 환산해 타깃을 찾는다(동일 리그면 이름 그대로도 매칭).
+      const canon = srcBlender ? (MIXAMO_FROM_BLENDER[key] ?? key) : key
       const src = sourceByKey.get(key)
-      const target = resolveTarget(key)
+      const target = resolveTarget(canon) ?? targetByKey.get(key)
       if (!src || !target) continue
 
       const t = track.clone()
@@ -128,7 +139,8 @@ export function retargetMixamoClip(clip, sourceRoot, targetRoot) {
       const C = wS.clone().invert().multiply(wT)
       const Cinv = C.clone().invert()
 
-      const keep = DELTA_KEEP[key] ?? 1
+      // 같은 본 이름 = 같은 리그(자기 캐릭터로 받은 모션) → 감쇠 없이 원본 그대로.
+      const keep = src.name === target.name ? 1 : (DELTA_KEEP[canon] ?? 1)
       const v = t.values
       for (let i = 0; i + 3 < v.length; i += 4) {
         qs.set(v[i], v[i + 1], v[i + 2], v[i + 3])
