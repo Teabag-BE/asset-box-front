@@ -1392,12 +1392,16 @@ export default function AssetViewer360({
     setRetargetBusy(true)
     try {
       const gltf = await new GLTFLoader().loadAsync('/anim/motion-pack.glb')
-      // 모션팩 클립 전부 제공(믹사모처럼 골라 쓰게) — 주요 모션(idle/walk/run) 먼저 오게 정렬.
+      // 모션팩 클립 제공 — 주요 모션(idle/walk/run) 먼저 오게 정렬.
+      // sad_pose/sneak_pose 는 "정지 포즈" 클립이라 모션으로 재생하면 어색해 제외(팀 피드백).
       const order = ['idle', 'walk', 'run']
-      const pool = (gltf.animations ?? []).slice().sort((a, b) => {
-        const ia = order.indexOf(a.name?.toLowerCase?.()), ib = order.indexOf(b.name?.toLowerCase?.())
-        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)
-      })
+      const exclude = ['sad_pose', 'sneak_pose']
+      const pool = (gltf.animations ?? [])
+        .filter(c => !exclude.includes(c.name?.toLowerCase?.()))
+        .sort((a, b) => {
+          const ia = order.indexOf(a.name?.toLowerCase?.()), ib = order.indexOf(b.name?.toLowerCase?.())
+          return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)
+        })
       const done = pool
         .map(c => retargetMixamoClip(c, gltf.scene, loadedObj))
         .filter(Boolean)
