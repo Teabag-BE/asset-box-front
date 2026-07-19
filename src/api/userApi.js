@@ -5,8 +5,11 @@ export const userApi = {
   me: () => request('/users/me'),
   // 특정 유저 프로필
   getById: (id) => request(`/users/${id}`),
-  // 닉네임으로 유저 검색 — 백엔드 GET /users/search 배포 전이면 실패(호출부에서 안내 처리).
-  search: (query) => request(`/users/search?query=${encodeURIComponent(query)}`),
+  // 닉네임으로 유저 검색 — 백엔드 GET /users/directory (dev에 구현됨, 릴리스 전이면 실패 → 호출부에서 안내).
+  // 응답: { items: [{ id, name, nickname, imageUrl, postCount, totalLikes }], ... } → items 로 언랩.
+  search: (query) =>
+    request(`/users/directory?q=${encodeURIComponent(query)}&size=20`)
+      .then(res => (res?.items ?? []).map(u => ({ ...u, avatarUrl: u.imageUrl ?? u.avatarUrl }))),
   // 내 프로필 수정 (닉네임/소개/전공/공개이메일) — 백엔드 PUT /users/me
   updateMe: ({ nickname, description, major, publicEmail }) =>
     request('/users/me', {
