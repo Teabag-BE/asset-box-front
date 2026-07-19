@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { latestUpdate } from '../data/updates'
 
 function FeatureCard({ to, icon, title, desc, disabled }) {
   const inner = (
@@ -16,6 +17,7 @@ function FeatureCard({ to, icon, title, desc, disabled }) {
 
 export default function HomePage() {
   const { user } = useAuth()
+  const update = latestUpdate()
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
@@ -45,6 +47,26 @@ export default function HomePage() {
             <FeatureCard icon="🛠" title="관리자" desc="회원·게시물·피드백 관리" disabled />
           </div>
         </>
+      )}
+
+      {/* 업데이트 노트 — 최신 라운드 하이라이트 (로그인 여부 무관) */}
+      {update && (
+        <div className="mt-12 bg-white border border-slate-200 rounded-2xl p-5">
+          <div className="flex items-baseline gap-2.5 flex-wrap">
+            <span className="text-xl">📦</span>
+            <p className="font-bold text-slate-800">업데이트 노트 <span className="text-slate-400 font-semibold">· {update.title}</span></p>
+            <span className="text-xs font-bold text-white bg-[#869B7E] px-2 py-0.5 rounded-full">{update.subtitle}</span>
+            <Link to="/updates" className="ml-auto text-sm font-bold text-[#556350] hover:underline shrink-0">전체 보기 →</Link>
+          </div>
+          <ul className="mt-3.5 grid md:grid-cols-3 gap-3">
+            {update.highlights.map(h => (
+              <li key={h.title} className="bg-slate-50 border border-slate-100 rounded-xl px-3.5 py-3">
+                <p className="text-sm font-semibold text-slate-800 leading-tight">{h.title}</p>
+                <p className="text-xs text-slate-500 mt-1 line-clamp-2">{h.desc}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* 미니게임 오락실 — 대기 중 즐기기 (로그인 여부 무관) */}
