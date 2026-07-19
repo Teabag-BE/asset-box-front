@@ -5,6 +5,7 @@ import { userApi } from '../api/userApi'
 import Avatar from '../components/Avatar'
 import EmptyState from '../components/EmptyState'
 import Spinner from '../components/Spinner'
+import DirectoryTabs from '../features/post/DirectoryTabs'
 
 // 명예의 전당 — 크리에이터를 기여도로 랭킹.
 // 현재 지표: 공유한 에셋 수(목록 API로 집계 가능). 좋아요/조회수는 목록 아이템에 아직
@@ -55,6 +56,7 @@ export default function HallOfFamePage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
+      <DirectoryTabs />
       {/* 헤더 */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.16em] text-[#a98a4b]">
