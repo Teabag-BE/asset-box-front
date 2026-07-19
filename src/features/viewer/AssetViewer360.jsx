@@ -10,7 +10,9 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
+import { isRetargetableHumanoid, retargetMixamoClip } from './animationUtils'
 
 // 실험실에서 바꾼 재질이 반영된 현재 모델(root)을 .glb 로 내보내 다운로드한다.
 function downloadModifiedGlb(root, onError) {
@@ -420,7 +422,7 @@ function hasEmbeddedLights(scene) {
 }
 
 function GltfModel({ url, wireframe, onLoaded, onLightsDetected }) {
-  const { scene } = useGLTF(url)
+  const { scene, animations } = useGLTF(url)
   useEffect(() => {
     if (!scene) return
     normalizeModelObject(scene)
@@ -429,7 +431,7 @@ function GltfModel({ url, wireframe, onLoaded, onLightsDetected }) {
     try { neutralizeEmptyMaterials(scene) } catch (e) { console.warn('[GltfModel] neutralizeEmptyMaterials 실패, 원본 유지:', e) }
     applyWireframe(scene, wireframe)
     onLightsDetected?.(hasEmbeddedLights(scene))
-    onLoaded?.(scene)
+    onLoaded?.(scene, animations ?? [])
   }, [scene])
   useEffect(() => { applyWireframe(scene, wireframe) }, [wireframe])
   return <primitive object={scene} />
@@ -548,7 +550,7 @@ function FbxModel({ url, textureUrls, wireframe, onLoaded }) {
         // 정상·내장 텍스처 머티리얼은 건드리지 않는다. 예외 시 원래 결과 그대로.
         try { autoFixMaterials(obj, textureUrls) } catch (e) { console.warn('[FbxModel] autoFixMaterials 실패, 원본 유지:', e) }
         setFbx(obj)
-        onLoaded?.(obj)
+        onLoaded?.(obj, obj.animations ?? [])
       },
       undefined,
       err => console.error('[FbxModel] FBX 로딩 실패:', err)
@@ -570,7 +572,7 @@ function ObjModel({ url, textureUrls, wireframe, onLoaded }) {
     // 관대화 보정: FBX 와 동일하게 색 텍스처 없는 머티리얼만 보정. 예외 시 원본 유지.
     try { autoFixMaterials(obj, textureUrls) } catch (e) { console.warn('[ObjModel] autoFixMaterials 실패, 원본 유지:', e) }
     applyWireframe(obj, wireframe)
-    onLoaded?.(obj)
+    onLoaded?.(obj, [])
   }, [obj])
   useEffect(() => { applyWireframe(obj, wireframe) }, [wireframe])
   return <primitive object={obj} />
@@ -1178,6 +1180,33 @@ function ModelStats({ obj }) {
   )
 }
 
+// 스켈레탈 애니메이션 재생기 — root 에 mixer 를 걸고 선택된 클립을 루프 재생.
+// playing=false 면 현재 포즈에서 일시정지(mixer 업데이트만 멈춤).
+function AnimationRunner({ root, clip, playing }) {
+  const mixerRef = useRef(null)
+
+  useEffect(() => {
+    if (!root || !clip) return undefined
+    let mixer
+    try {
+      mixer = new THREE.AnimationMixer(root)
+      mixer.clipAction(clip).play()
+      mixerRef.current = mixer
+    } catch (e) {
+      console.warn('[AnimationRunner] 재생 시작 실패:', e)
+    }
+    return () => {
+      try { mixer?.stopAllAction(); mixer?.uncacheRoot(root) } catch { /* 무시 */ }
+      mixerRef.current = null
+    }
+  }, [root, clip])
+
+  useFrame((_, delta) => {
+    if (playing && mixerRef.current) mixerRef.current.update(delta)
+  })
+  return null
+}
+
 const SUPPORTED = ['glb', 'gltf', 'fbx', 'obj']
 
 export default function AssetViewer360({
@@ -1191,6 +1220,11 @@ export default function AssetViewer360({
   const [modelCenter, setModelCenter] = useState(null)
   const [gridFloorY, setGridFloorY] = useState(0)  // 그리드 뷰포트 바닥 높이(모델 바닥에 맞춤)
   const [gridScale, setGridScale] = useState(1)    // 모델 최대 치수(그리드 크기 산정용)
+  const [clips, setClips] = useState([])           // 재생 가능한 애니메이션 클립들(내장 or 리타게팅)
+  const [clipIdx, setClipIdx] = useState(-1)       // 선택된 클립(-1 = 재생 안 함)
+  const [animPlaying, setAnimPlaying] = useState(true)
+  const [canRetarget, setCanRetarget] = useState(false)  // 클립 없는 휴머노이드 → 기본 모션 제공 가능
+  const [retargetBusy, setRetargetBusy] = useState(false)
   const [embeddedLights, setEmbeddedLights] = useState(false)
   const [capturing, setCapturing]   = useState(false)
   const [lightMove, setLightMove]   = useState(false)  // 조명 이동 모드 on/off
@@ -1268,7 +1302,7 @@ export default function AssetViewer360({
     }
   }, [])
 
-  function handleLoaded(obj) {
+  function handleLoaded(obj, animations = []) {
     setLoadedObj(obj)
     const box    = new THREE.Box3().setFromObject(obj)
     const center = box.getCenter(new THREE.Vector3())
@@ -1278,6 +1312,49 @@ export default function AssetViewer360({
     const size = box.getSize(new THREE.Vector3())
     setGridFloorY(-(size.y / 2))
     setGridScale(Math.max(size.x, size.y, size.z) || 1)
+
+    // 애니메이션: 내장 클립이 있으면 첫 클립 자동 재생. 없어도 휴머노이드 본 구조면
+    // 번들 기본 모션(idle/walk/run) 리타게팅 버튼을 노출한다.
+    const embedded = (animations ?? []).filter(c => c?.tracks?.length)
+    setClips(embedded)
+    // 기본 선택: 'idle' 이름의 클립이 있으면 그걸(가만히 서있는 모션이 첫인상으로 자연스러움), 없으면 첫 클립.
+    const idleIdx = embedded.findIndex(c => c.name?.toLowerCase?.().includes('idle'))
+    setClipIdx(embedded.length > 0 ? (idleIdx >= 0 ? idleIdx : 0) : -1)
+    setAnimPlaying(true)
+    try {
+      setCanRetarget(embedded.length === 0 && isRetargetableHumanoid(obj))
+    } catch {
+      setCanRetarget(false)
+    }
+  }
+
+  // 번들 모션팩(/anim/motion-pack.glb, 믹사모 리그 idle/walk/run)을 로드해
+  // 현재 모델 스켈레톤으로 리타게팅. 성공한 클립들을 재생 목록에 넣는다.
+  async function handleRetargetMotions() {
+    if (!loadedObj || retargetBusy) return
+    setRetargetBusy(true)
+    try {
+      const gltf = await new GLTFLoader().loadAsync('/anim/motion-pack.glb')
+      const wanted = ['idle', 'walk', 'run']
+      const source = (gltf.animations ?? []).filter(c => wanted.includes(c.name?.toLowerCase?.()))
+      const pool = source.length > 0 ? source : (gltf.animations ?? []).slice(0, 3)
+      const done = pool
+        .map(c => retargetMixamoClip(c, gltf.scene, loadedObj))
+        .filter(Boolean)
+      if (done.length === 0) {
+        console.warn('[뷰어] 기본 모션 리타게팅 실패 — 매칭되는 본이 없음')
+        setCanRetarget(false)
+        return
+      }
+      setClips(done)
+      setClipIdx(0)
+      setAnimPlaying(true)
+      setCanRetarget(false)
+    } catch (e) {
+      console.warn('[뷰어] 모션팩 로드 실패:', e)
+    } finally {
+      setRetargetBusy(false)
+    }
   }
 
   function handleCaptureDone(blob) {
@@ -1440,6 +1517,9 @@ export default function AssetViewer360({
           {/* 썸네일 캡처 함수 등록 — onCaptureReady 가 주어질 때만 부모에 capture() 를 넘긴다. */}
           {onCaptureReady && <CaptureHelper registerCapture={onCaptureReady} />}
 
+          {/* 스켈레탈 애니메이션 재생(내장 클립 or 리타게팅된 기본 모션) */}
+          <AnimationRunner root={loadedObj} clip={clips[clipIdx] ?? null} playing={animPlaying} />
+
           <OrbitControls
             ref={controlsRef}
             makeDefault
@@ -1487,6 +1567,55 @@ export default function AssetViewer360({
       />
 
       <LightingPicker value={lighting} onChange={setLighting} />
+
+      {/* 애니메이션 바(하단 중앙) — 내장 클립 재생/일시정지/클립 선택, 또는 기본 모션 입히기 */}
+      {(clips.length > 0 || canRetarget) && (
+        <div style={{
+          position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 10,
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(4px)',
+          borderRadius: 10, padding: '4px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+        }}>
+          {clips.length > 0 ? (
+            <>
+              <button type="button"
+                onClick={() => setAnimPlaying(v => !v)}
+                title={animPlaying ? '일시정지' : '재생'}
+                style={{
+                  border: 'none', cursor: 'pointer', borderRadius: 8, padding: '4px 10px',
+                  fontSize: 13, fontWeight: 700,
+                  background: animPlaying ? '#869B7E' : '#ede9fe',
+                  color: animPlaying ? '#fff' : '#6d28d9',
+                }}
+              >{animPlaying ? '⏸' : '▶'}</button>
+              {clips.length > 1 ? (
+                <select
+                  value={clipIdx}
+                  onChange={e => { setClipIdx(Number(e.target.value)); setAnimPlaying(true) }}
+                  style={{ fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8, padding: '4px 6px', color: '#334155', background: '#fff', maxWidth: 140 }}
+                >
+                  {clips.map((c, i) => <option key={i} value={i}>{c.name || `클립 ${i + 1}`}</option>)}
+                </select>
+              ) : (
+                <span style={{ fontSize: 12, color: '#475569', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {clips[0]?.name || '애니메이션'}
+                </span>
+              )}
+            </>
+          ) : (
+            <button type="button"
+              onClick={handleRetargetMotions}
+              disabled={retargetBusy}
+              title="믹사모 계열 휴머노이드 본 구조 감지 — 기본 모션(idle/walk/run)을 입혀봅니다"
+              style={{
+                border: 'none', cursor: retargetBusy ? 'wait' : 'pointer', borderRadius: 8,
+                padding: '4px 10px', fontSize: 13, fontWeight: 600,
+                background: '#ede9fe', color: '#6d28d9', opacity: retargetBusy ? 0.6 : 1,
+              }}
+            >{retargetBusy ? '모션 준비 중…' : '🕺 기본 모션 입히기'}</button>
+          )}
+        </div>
+      )}
 
       {/* 조명 이동 토글 버튼 — LightingPicker(좌하단 bottom 12) 바로 위. zIndex 10 로 오버레이보다 위. */}
       <button type="button"
