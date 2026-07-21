@@ -24,6 +24,8 @@ import HallOfFamePage from './pages/HallOfFamePage'
 import SearchResultsPage from './pages/SearchResultsPage'
 import GamesPage from './pages/GamesPage'
 import UpdatesPage from './pages/UpdatesPage'
+import EmailVerifyPage from './pages/EmailVerifyPage'
+import AdminEmailPage from './pages/AdminEmailPage'
 
 export default function App() {
   return (
@@ -36,6 +38,7 @@ export default function App() {
             <Route path="/"       element={<HomePage />} />
             <Route path="/login"  element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
+            <Route path="/email/verify" element={<EmailVerifyPage />} />
 
             {/* 미니게임 오락실 (누구나 대기 중 플레이 — 인증 불필요) */}
             <Route path="/games" element={<GamesPage />} />
@@ -66,6 +69,8 @@ export default function App() {
             {/* 프로필 / 포트폴리오 */}
             <Route path="/profile"            element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
             <Route path="/portfolio/:userId"  element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
+
+            <Route path="/admin/email" element={<ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}><AdminEmailPage /></ProtectedRoute>} />
           </Route>
         </Routes>
         </ConfirmProvider>

@@ -8,6 +8,7 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [unread, setUnread] = useState(0)
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
 
   // 폴링: 안 읽은 메시지 수 (15초)
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function Layout() {
               <Link to="/assets" className={navCls('/assets')}>에셋</Link>
               <Link to="/requests" className={navCls('/requests')}>요청 게시판</Link>
               <Link to="/directory" className={navCls('/directory')}>크리에이터</Link>
+              {isAdmin && <Link to="/admin/email" className={navCls('/admin/email')}>이메일 관리</Link>}
             </nav>
           )}
 
