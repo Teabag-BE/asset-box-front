@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { authApi } from '../api/authApi'
+import { decodeJwt } from '../auth/jwt'
 
 export default function EmailVerifyPage() {
   const [searchParams] = useSearchParams()
@@ -16,9 +17,13 @@ export default function EmailVerifyPage() {
     async function verify() {
       try {
         await authApi.verifyEmail(token)
+        const claims = decodeJwt(token)
+        if (claims?.email) {
+          localStorage.setItem('verifiedSignupEmail', claims.email)
+        }
         if (!ignore) {
           setStatus('success')
-          setMessage('이메일 인증이 완료되었습니다. 이제 로그인할 수 있습니다.')
+          setMessage('이메일 인증이 완료되었습니다. 회원가입을 계속 진행해 주세요.')
         }
       } catch (err) {
         if (!ignore) {
@@ -65,10 +70,10 @@ export default function EmailVerifyPage() {
         <h1 className="mb-3 text-2xl font-bold text-slate-900">{title}</h1>
         <p className="mb-6 text-sm leading-6 text-slate-600">{description}</p>
         <Link
-          to="/login"
+          to={status === 'success' ? '/signup' : '/login'}
           className="inline-flex h-10 items-center justify-center rounded-lg bg-[#869B7E] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#6b7d64]"
         >
-          로그인으로 이동
+          {status === 'success' ? '회원가입으로 이동' : '로그인으로 이동'}
         </Link>
       </section>
     </div>
