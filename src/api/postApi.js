@@ -25,7 +25,7 @@ export const postApi = {
   remove: (id) => request(`/posts/${id}`, { method: 'DELETE' }),
   // 좋아요 토글 — 백엔드 POST /posts/{id}/like → { likeCount, liked }
   toggleLike: (id) => request(`/posts/${id}/like`, { method: 'POST' }),
-  // 게시글 메타데이터 수정 (제목/설명/카테고리/태그) — 백엔드 PUT /posts/{id}
+  // 게시글 메타데이터 수정 (제목/설명/카테고리/태그) — 구 서버 PUT /posts/{id} (JSON)
   update: (id, { title, content, categoryId, tags }) =>
     request(`/posts/${id}`, {
       method: 'PUT',
@@ -33,4 +33,14 @@ export const postApi = {
       // 백엔드가 수정 응답으로 엔티티를 직접 반환해 200+비JSON 이 올 수 있음 → 2xx면 성공 처리.
       okOnNonJson: true,
     }),
+  // 파일 포함 수정 — 신 서버 PUT /posts/{id} (multipart: request + thumbnail? + assetZip?).
+  // 구 서버(JSON 전용)에 보내면 415 → 호출부에서 안내/폴백 처리.
+  updateWithFiles: (id, { title, content, categoryId, tags, thumbnail, assetZip }) => {
+    const fd = new FormData()
+    const payload = { title, content, categoryId: categoryId || null, tags: tags ?? [] }
+    fd.append('request', new Blob([JSON.stringify(payload)], { type: 'application/json' }))
+    if (thumbnail) fd.append('thumbnail', thumbnail)
+    if (assetZip) fd.append('assetZip', assetZip)
+    return requestMultipart(`/posts/${id}`, fd, { method: 'PUT' })
+  },
 }
