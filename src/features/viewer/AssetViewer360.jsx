@@ -13,6 +13,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
 import { isRetargetableHumanoid, retargetMixamoClip, collectRigNodes } from './animationUtils'
+import { useToast } from '../../components/Toast'
 
 // 실험실에서 바꾼 재질이 반영된 현재 모델(root)을 .glb 로 내보내 다운로드한다.
 function downloadModifiedGlb(root, onError) {
@@ -1239,6 +1240,7 @@ export default function AssetViewer360({
   const envFileInputRef = useRef(null)  // 환경맵 파일 선택 input
   const customEnvUrlRef = useRef(null)  // 현재 커스텀 환경맵 blob URL(언마운트 정리용, 항상 최신값 유지)
   const restPoseRef = useRef(null)  // 로드 시점 본 rest 포즈 — 리타게팅 기준 포즈 복원용(#158)
+  const toast = useToast()  // 드롭/모션 실패를 콘솔이 아니라 화면으로 알린다(#163)
 
   const ext = fileExtension?.toLowerCase()
 
@@ -1320,6 +1322,7 @@ export default function AssetViewer360({
       const anims = (isFbx ? loaded.animations : loaded.animations) ?? []
       if (anims.length === 0) {
         console.warn('[뷰어] 드롭한 파일에 애니메이션이 없습니다:', name)
+        toast(`'${name}'에는 애니메이션이 없어요`, 'error')
         return false
       }
       const base = name.slice(0, dot > 0 ? dot : name.length)
@@ -1337,6 +1340,7 @@ export default function AssetViewer360({
         .filter(Boolean)
       if (done.length === 0) {
         console.warn('[뷰어] 모션 리타게팅 실패 — 본 매칭 안 됨:', name)
+        toast('모션의 본 구조가 이 캐릭터와 맞지 않아 입히지 못했어요', 'error', 4000)
         return false
       }
       setClips(prev => {
@@ -1346,9 +1350,11 @@ export default function AssetViewer360({
       })
       setAnimPlaying(true)
       setCanRetarget(false)
+      toast(done.length > 1 ? `모션 ${done.length}개 적용: ${done[0].name} 외` : `모션 적용: ${done[0].name}`)
       return true
     } catch (e) {
       console.warn('[뷰어] 모션 파일 로드 실패:', e)
+      toast(`'${name}' 파일을 읽지 못했어요 — 믹사모 FBX/GLB인지 확인해주세요`, 'error', 4000)
       return false
     } finally {
       try { URL.revokeObjectURL(url) } catch { /* 무시 */ }
@@ -1364,7 +1370,9 @@ export default function AssetViewer360({
     const ext = (file.name || '').split('.').pop()?.toLowerCase() ?? ''
     // 모션 파일이면 리타게팅, 아니면 환경맵으로 처리.
     if (MOTION_EXTS.includes(ext)) { applyMotionFile(file); return }
-    applyEnvFile(file)
+    if (!applyEnvFile(file)) {
+      toast(`지원하지 않는 파일이에요 (모션: fbx/glb/gltf · 환경맵: hdr/exr/jpg/png/webp)`, 'error', 4000)
+    }
   }
 
   // 언마운트 시 남은 환경맵 blob URL 정리(ref 로 항상 최신 URL 을 읽는다).
@@ -1431,15 +1439,18 @@ export default function AssetViewer360({
         .filter(Boolean)
       if (done.length === 0) {
         console.warn('[뷰어] 기본 모션 리타게팅 실패 — 매칭되는 본이 없음')
+        toast('이 모델의 본 구조로는 기본 모션을 입히지 못했어요', 'error', 4000)
         setCanRetarget(false)
         return
       }
       setClips(done)
+      toast(`기본 모션 ${done.length}종을 입혔어요 — 하단 바에서 골라보세요`)
       setClipIdx(0)
       setAnimPlaying(true)
       setCanRetarget(false)
     } catch (e) {
       console.warn('[뷰어] 모션팩 로드 실패:', e)
+      toast('기본 모션팩을 불러오지 못했어요 — 잠시 후 다시 시도해주세요', 'error')
     } finally {
       setRetargetBusy(false)
     }
