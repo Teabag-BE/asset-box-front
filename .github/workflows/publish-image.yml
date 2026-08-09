@@ -5,6 +5,13 @@ on:
     branches: [main]        # 머지되면 이미지 빌드·푸시(publish)
   pull_request:
     branches: [main]        # PR이면 빌드만(푸시 X) — Dockerfile/빌드 깨짐 검증
+  workflow_dispatch:        # 수동 재배포용 (Actions 장애·배포 꼬임 복구)
+
+# 연속 머지 시 CD 가 병렬로 돌면 이전 커밋 빌드가 늦게 끝나 최신 배포를 덮어쓸 수 있다
+# (2026-07-20 실제 발생). main CD 는 한 번에 하나만, 새 커밋이 오면 이전 실행은 취소.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   image:
