@@ -98,13 +98,13 @@ export async function request(path, options = {}) {
   return json.data
 }
 
-export async function requestMultipart(path, formData) {
+export async function requestMultipart(path, formData, { method = 'POST' } = {}) {
   const token = await ensureToken()
   if (localStorage.getItem('accessToken') && !token) {
     throw new Error('세션이 만료되어 다시 로그인해야 합니다.')
   }
   const res = await fetch(BASE_URL + path, {
-    method: 'POST',
+    method,
     credentials: 'include',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
