@@ -658,6 +658,7 @@ function MaterialLab({
   const [open, setOpen] = useState(false)
   const texInputRef = useRef(null)
   const [customMapName, setCustomMapName] = useState(null)  // 첨부한 텍스처 파일명(표시/제거용)
+  const toast = useToast()
 
   if (!root) return null
 
@@ -775,7 +776,7 @@ function MaterialLab({
 
           {/* 변형본 다운로드 — 실험실에서 바꾼 재질 그대로 .glb 로 내보낸다. */}
           <button type="button"
-            onClick={() => downloadModifiedGlb(root)}
+            onClick={() => downloadModifiedGlb(root, () => toast('변형본 .glb 를 만들지 못했어요. 새로고침 후 다시 시도해 주세요.', 'error'))}
             title="지금 화면의 재질/색이 반영된 모델을 .glb 로 저장"
             style={{
               padding: '5px 8px', borderRadius: 8, border: '1px solid #c4b5fd',

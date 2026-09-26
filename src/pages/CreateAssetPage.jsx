@@ -9,7 +9,7 @@ import FileDropzone from '../components/FileDropzone'
 import { useToast } from '../components/Toast'
 import TagInput from '../features/post/TagInput'
 import CategorySelector from '../features/post/CategorySelector'
-import { toAssetZipFile } from '../utils/assetZip'
+import { toAssetZipFile, preloadExrConverter } from '../utils/assetZip'
 import { validateAssetPackage } from '../utils/validateAssetPackage'
 import { ChunkErrorBoundary } from '../components/RouteBoundary'
 
@@ -48,6 +48,7 @@ async function buildPreviewData(file) {
     let modelUrl = null
     let modelExt = null
     const textureUrls = []
+    if (Object.keys(entries).some(p => extOf(p) === 'exr')) preloadExrConverter()
 
     for (const [path, data] of Object.entries(entries)) {
       // __MACOSX, 디렉토리 엔트리 등은 건너뛴다.

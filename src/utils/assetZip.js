@@ -8,6 +8,12 @@ import { CONVERTIBLE_TEXTURE_EXTS, extOf, isJunkEntry, isKeptForUpload } from '.
 let exrModule = null
 const loadExrToPng = () => (exrModule ??= import('./exrToPng').catch((e) => { exrModule = null; throw e }))
 
+// ZIP 에 .exr 이 보이는 시점(파일 선택 직후)에 변환 모듈을 미리 받아 둔다.
+// 폼을 쓰는 동안 배포가 끼어들어도 이미 받은 모듈로 변환할 수 있다(제출 시점엔 옛 해시 청크가 404).
+export function preloadExrConverter() {
+  loadExrToPng().catch(() => { /* 실패는 제출 시 다시 시도하고, 그때 사용자에게 알린다 */ })
+}
+
 const MODEL_EXTENSIONS = new Set(['fbx', 'glb'])
 
 // 일부 툴이 만든 ZIP 은 STORED 엔트리에 데이터 디스크립터(EXT)를 붙여,
@@ -23,8 +29,16 @@ async function normalizeZip(file, bytes) {
     if (isJunkEntry(path)) continue
 
     if (CONVERTIBLE_TEXTURE_EXTS.has(extOf(path))) {
+      let exrToPngBytes
       try {
-        const { exrToPngBytes } = await loadExrToPng()
+        ({ exrToPngBytes } = await loadExrToPng())
+      } catch (e) {
+        // 변환 모듈(청크)을 못 받았다 — 배포 직후 옛 해시 404 가 대표적. 여기서 원본 .exr 을 남기면
+        // 백엔드가 허용하지 않는 확장자라 업로드 전체가 거부되고 이유도 안 보이므로, 멈추고 알린다.
+        console.warn('[assetZip] EXR 변환 모듈 로드 실패:', e)
+        throw new Error('EXR 텍스처 변환 기능을 불러오지 못했어요. 새 버전이 배포됐을 수 있으니 새로고침 후 다시 등록해 주세요.', { cause: e })
+      }
+      try {
         const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
         clean[path.replace(/\.[^.]+$/i, '.png')] = await exrToPngBytes(buf)
         continue
