@@ -18,4 +18,9 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  // 테스트·vitest 설정은 Node 에서 돈다(process.env.TZ 등)
+  {
+    files: ['**/*.test.{js,jsx}', 'vitest.config.js'],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
 ])

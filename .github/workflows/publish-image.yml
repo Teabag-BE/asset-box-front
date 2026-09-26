@@ -14,7 +14,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 단위 테스트가 실패하면 image(PR 검증·main 이미지)와 deploy 가 모두 건너뛰어진다.
+  # image 잡과 분리한 이유: image 는 packages:write 권한이라, 거기서 npm install(서드파티 스크립트)을
+  # 돌리면 쓰기 토큰에 노출된다. 테스트 잡은 읽기 권한만 갖는다.
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22          # Dockerfile(node:22-alpine)과 동일
+          cache: npm
+      - name: 의존성 설치
+        run: npm install --no-audit --no-fund
+      - name: 단위 테스트
+        run: npm test               # TZ=Asia/Seoul 은 vitest.config.js 가 고정
+
   image:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
