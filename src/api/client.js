@@ -86,7 +86,7 @@ async function handleResponse(res, { skipAuth, okOnNonJson, hadToken, retried, i
   }
 
   const text = await res.text()
-  let json = null
+  let json
   try { json = text ? JSON.parse(text) : {} } catch { json = null }
 
   if (!skipAuth && (res.status === 401 || res.status === 403)) {
