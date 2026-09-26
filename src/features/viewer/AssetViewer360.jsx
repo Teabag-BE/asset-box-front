@@ -9,15 +9,16 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
 import { isRetargetableHumanoid, retargetMixamoClip, collectRigNodes } from './animationUtils'
 import { useToast } from '../../components/Toast'
 
 // 실험실에서 바꾼 재질이 반영된 현재 모델(root)을 .glb 로 내보내 다운로드한다.
-function downloadModifiedGlb(root, onError) {
+// GLTFExporter(약 35KB)는 버튼을 누를 때만 받는다 — 뷰어를 여는 모든 사용자가 내려받을 필요 없음.
+async function downloadModifiedGlb(root, onError) {
   try {
+    const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js')
     new GLTFExporter().parse(
       root,
       (result) => {

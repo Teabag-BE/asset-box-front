@@ -1,6 +1,12 @@
 import { unzipSync, zipSync } from 'fflate'
-import { exrToPngBytes } from './exrToPng'
 import { CONVERTIBLE_TEXTURE_EXTS, extOf, isJunkEntry, isKeptForUpload } from './assetFormats'
+
+// exrToPng 는 three.js 코어 + EXRLoader(약 750KB)를 끌고 온다. 정적 import 하면
+// App → CreateAssetPage → assetZip 체인으로 three 전체가 메인 번들에 들어가므로,
+// ZIP 안에 실제로 .exr 이 있을 때만 동적 import 한다(모듈 Promise 는 한 번만 만든다).
+// 청크 로드 실패(배포 직후 옛 해시 404 등)는 캐시하지 않아 다음 업로드에서 재시도한다.
+let exrModule = null
+const loadExrToPng = () => (exrModule ??= import('./exrToPng').catch((e) => { exrModule = null; throw e }))
 
 const MODEL_EXTENSIONS = new Set(['fbx', 'glb'])
 
@@ -18,6 +24,7 @@ async function normalizeZip(file, bytes) {
 
     if (CONVERTIBLE_TEXTURE_EXTS.has(extOf(path))) {
       try {
+        const { exrToPngBytes } = await loadExrToPng()
         const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
         clean[path.replace(/\.[^.]+$/i, '.png')] = await exrToPngBytes(buf)
         continue
