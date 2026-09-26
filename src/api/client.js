@@ -59,67 +59,111 @@ async function ensureToken() {
   return token
 }
 
+const SESSION_EXPIRED = '세션이 만료되어 다시 로그인해야 합니다.'
+const SERVER_UNHANDLED = '서버가 요청을 처리하지 못했어요. 잠시 후 다시 시도하고, 반복되면 알려주세요.'
+
+// 운영 백엔드는 인증 실패와 처리되지 않은 서버 오류를 모두 302 → /login 으로 보낸다
+// (/error 디스패치가 denyAll 에 걸림 — Asset-Box#196). fetch 는 이를 자동으로 따라가
+// /login 의 index.html(200 text/html)을 받으므로, 상태코드가 아니라 최종 URL 로 감지해야 한다.
+function redirectedToLogin(res) {
+  if (!res.redirected || !res.url) return false
+  try { return new URL(res.url).pathname.startsWith('/login') } catch { return false }
+}
+
+// 토큰이 형식상 정상이고 만료 시각 전인가(서버 검증 아님 — 로그아웃 여부 판단용).
+function isLiveToken(token) {
+  const exp = decodeJwt(token)?.exp
+  return typeof exp === 'number' && exp * 1000 > Date.now()
+}
+
+// request/requestMultipart 공통 응답 처리. { retry: true } 면 호출부가 새 토큰으로 1회 재시도한다.
+async function handleResponse(res, { skipAuth, okOnNonJson, token, retried, idempotent }) {
+  if (redirectedToLogin(res)) {
+    if (skipAuth || !token) throw new Error(skipAuth ? SERVER_UNHANDLED : '로그인이 필요해요.')
+    if (!retried) {
+      // 로컬 exp 판단과 달리 서버가 토큰을 거부했을 수 있다 → 갱신해 본다.
+      if (await tryRefresh()) {
+        // 쓰기 요청은 서버 오류로 일부 처리됐을 수 있어 자동 재전송하지 않는다.
+        if (idempotent) return { retry: true }
+        throw new Error('요청을 처리하지 못했어요. 다시 시도해 주세요.')
+      }
+      // 갱신도 실패. 하지만 운영에선 DB 일시 장애 때도 원 요청·갱신 요청이 둘 다 302 가 되므로,
+      // 토큰이 만료 전이면 세션 문제로 단정하지 않는다 — 서버가 한 번 흔들릴 때 전원이 로그아웃되고
+      // 작성 중인 폼이 날아가는 것을 막는다. 진짜 무효라면 만료 시각에 ensureToken 이 로그인으로 보낸다.
+      if (isLiveToken(token)) throw new Error(SERVER_UNHANDLED)
+      redirectToLogin()
+      throw new Error(SESSION_EXPIRED)
+    }
+    // 새 토큰으로도 같으면 인증이 아니라 서버가 처리하지 못한 오류 — 로그아웃시키지 않는다.
+    throw new Error(SERVER_UNHANDLED)
+  }
+
+  const text = await res.text()
+  let json
+  try { json = text ? JSON.parse(text) : {} } catch { json = null }
+
+  if (!skipAuth && (res.status === 401 || res.status === 403)) {
+    // 403 + ApiResponse 오류 본문 = 업무상 권한 거부(예: TA 전공만 요청 수락 가능) → 메시지만 보여주고 세션은 유지.
+    // 401(토큰 만료·위조)과 본문 없는 403 은 세션 문제로 보고 로그인으로 보낸다.
+    if (res.status === 403 && json?.success === false && json.error?.message) {
+      throw new Error(json.error.message)
+    }
+    redirectToLogin()
+    throw new Error(SESSION_EXPIRED)
+  }
+
+  if (json === null) {
+    if (okOnNonJson && res.ok) return { data: null }   // 2xx + 비JSON → 성공으로 간주
+    throw nonJsonError(res.status)
+  }
+  if (!json.success) {
+    if (okOnNonJson && res.ok) return { data: json.data ?? null }   // 2xx면 래핑이 달라도 성공
+    throw new Error(json.error?.message ?? json.message ?? `요청 실패 (HTTP ${res.status})`)
+  }
+  return { data: json.data }
+}
+
 export async function request(path, options = {}) {
   // okOnNonJson: 2xx인데 본문이 JSON이 아니거나 ApiResponse 래핑이 아니어도 성공으로 처리한다.
   // (백엔드가 엔티티를 직접 반환해 직렬화가 깨지는 등으로 200+비JSON 이 오는, 응답 데이터가
   //  필요 없는 호출용 — 예: 게시글 수정. 백엔드가 DTO 로 고쳐지면 자연히 정상 경로를 탄다.)
+  // 단 302→/login 추종으로 받은 HTML 은 성공으로 보지 않는다(handleResponse 가 먼저 거른다).
   const { skipAuth, okOnNonJson, ...fetchOptions } = options
-  // 로그인/회원가입은 익명 전용 엔드포인트라 토큰을 붙이면 안 됨(붙으면 302/403)
-  const token = skipAuth ? null : await ensureToken()
-  if (!skipAuth && localStorage.getItem('accessToken') && !token) {
-    // 만료됐고 갱신도 실패 → redirectToLogin이 이미 처리. 요청 중단.
-    throw new Error('세션이 만료되어 다시 로그인해야 합니다.')
+  const idempotent = (fetchOptions.method ?? 'GET').toUpperCase() === 'GET'
+  for (let attempt = 0; ; attempt++) {
+    // 로그인/회원가입은 익명 전용 엔드포인트라 토큰을 붙이면 안 됨(붙으면 302/403)
+    const token = skipAuth ? null : await ensureToken()
+    if (!skipAuth && localStorage.getItem('accessToken') && !token) {
+      // 만료됐고 갱신도 실패 → redirectToLogin이 이미 처리. 요청 중단.
+      throw new Error(SESSION_EXPIRED)
+    }
+    const res = await fetch(BASE_URL + path, {
+      ...fetchOptions,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...fetchOptions.headers,
+      },
+    })
+    const out = await handleResponse(res, { skipAuth, okOnNonJson, token, retried: attempt > 0, idempotent })
+    if (!out.retry) return out.data
   }
-  const res = await fetch(BASE_URL + path, {
-    ...fetchOptions,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...fetchOptions.headers,
-    },
-  })
-  if (!skipAuth && (res.status === 401 || res.status === 403)) {
-    redirectToLogin()
-    throw new Error('세션이 만료되어 다시 로그인해야 합니다.')
-  }
-  const text = await res.text()
-  let json
-  try {
-    json = text ? JSON.parse(text) : {}
-  } catch {
-    if (okOnNonJson && res.ok) return null   // 2xx + 비JSON → 성공으로 간주
-    throw nonJsonError(res.status)
-  }
-  if (!json.success) {
-    if (okOnNonJson && res.ok) return json.data ?? null   // 2xx면 래핑이 달라도 성공
-    throw new Error(json.error?.message ?? json.message ?? `요청 실패 (HTTP ${res.status})`)
-  }
-  return json.data
 }
 
 export async function requestMultipart(path, formData, { method = 'POST' } = {}) {
-  const token = await ensureToken()
-  if (localStorage.getItem('accessToken') && !token) {
-    throw new Error('세션이 만료되어 다시 로그인해야 합니다.')
+  for (let attempt = 0; ; attempt++) {
+    const token = await ensureToken()
+    if (localStorage.getItem('accessToken') && !token) {
+      throw new Error(SESSION_EXPIRED)
+    }
+    const res = await fetch(BASE_URL + path, {
+      method,
+      credentials: 'include',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    })
+    const out = await handleResponse(res, { token, retried: attempt > 0, idempotent: false })
+    if (!out.retry) return out.data
   }
-  const res = await fetch(BASE_URL + path, {
-    method,
-    credentials: 'include',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  })
-  if (res.status === 401 || res.status === 403) {
-    redirectToLogin()
-    throw new Error('세션이 만료되어 다시 로그인해야 합니다.')
-  }
-  const text = await res.text()
-  let json
-  try {
-    json = text ? JSON.parse(text) : {}
-  } catch {
-    throw nonJsonError(res.status)
-  }
-  if (!json.success) throw new Error(json.error?.message ?? json.message ?? '요청 실패')
-  return json.data
 }
