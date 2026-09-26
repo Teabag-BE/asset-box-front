@@ -2,6 +2,8 @@ import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { messageApi } from '../api/messageApi'
+import RouteBoundary from './RouteBoundary'
+import { prefetchPages } from '../pages/lazyPages'
 
 export default function Layout() {
   const { user, logout } = useAuth()
@@ -18,6 +20,11 @@ export default function Layout() {
     fetchUnread()
     const id = setInterval(fetchUnread, 15000)
     return () => { active = false; clearInterval(id) }
+  }, [user])
+
+  // 로그인 상태가 되면 유휴 시간에 페이지 청크를 미리 받아 둔다(비로그인 방문자는 받지 않음).
+  useEffect(() => {
+    if (user) prefetchPages()
   }, [user])
 
   const isActive = (to) => to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
@@ -87,7 +94,12 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="flex-1"><Outlet /></main>
+      {/* 라우트 청크 로딩(Suspense)·로드 실패(에러 경계)는 본문에서만 처리 — 헤더는 유지 */}
+      <main className="flex-1">
+        <RouteBoundary resetKey={location.pathname}>
+          <Outlet />
+        </RouteBoundary>
+      </main>
     </div>
   )
 }

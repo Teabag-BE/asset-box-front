@@ -5,25 +5,17 @@ import { ConfirmProvider } from './components/ConfirmDialog'
 import ProtectedRoute from './auth/ProtectedRoute'
 import Layout from './components/Layout'
 
+// 첫 진입 화면(홈·로그인·회원가입)만 메인 번들에 둔다. 나머지는 lazyPages 에서 라우트별 청크로.
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
-import InboxPage from './pages/InboxPage'
-import ConversationPage from './pages/ConversationPage'
-import RequestBoardPage from './pages/RequestBoardPage'
-import RequestDetailPage from './pages/RequestDetailPage'
-import CreateRequestPage from './pages/CreateRequestPage'
-import AssetBoardPage from './pages/AssetBoardPage'
-import AssetDetailPage from './pages/AssetDetailPage'
-import CreateAssetPage from './pages/CreateAssetPage'
-import EditAssetPage from './pages/EditAssetPage'
-import ProfilePage from './pages/ProfilePage'
-import PortfolioPage from './pages/PortfolioPage'
-import DirectoryPage from './pages/DirectoryPage'
-import HallOfFamePage from './pages/HallOfFamePage'
-import SearchResultsPage from './pages/SearchResultsPage'
-import GamesPage from './pages/GamesPage'
-import UpdatesPage from './pages/UpdatesPage'
+import {
+  InboxPage, ConversationPage,
+  RequestBoardPage, RequestDetailPage, CreateRequestPage,
+  AssetBoardPage, AssetDetailPage, CreateAssetPage, EditAssetPage,
+  ProfilePage, PortfolioPage, DirectoryPage, HallOfFamePage, SearchResultsPage,
+  GamesPage, UpdatesPage,
+} from './pages/lazyPages'
 
 export default function App() {
   return (

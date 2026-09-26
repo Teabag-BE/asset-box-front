@@ -78,7 +78,8 @@ export default function AssetCard({
       {/* 썸네일 */}
       <div className="relative aspect-[16/10] overflow-hidden bg-[#EEF0E8]">
         {showThumbnail ? (
-          <img src={thumbnailUrl} alt={title} onError={() => setImageFailed(true)}
+          // 목록은 한 번에 최대 100장(AssetBoardPage size=100)을 그린다 → 화면 밖 썸네일은 스크롤될 때 받는다.
+          <img src={thumbnailUrl} alt={title} loading="lazy" decoding="async" onError={() => setImageFailed(true)}
             className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.025]" />
         ) : (
           <AssetPreviewFallback title={title} extension={fileExtension} />

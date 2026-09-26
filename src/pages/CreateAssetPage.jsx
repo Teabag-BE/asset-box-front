@@ -9,8 +9,9 @@ import FileDropzone from '../components/FileDropzone'
 import { useToast } from '../components/Toast'
 import TagInput from '../features/post/TagInput'
 import CategorySelector from '../features/post/CategorySelector'
-import { toAssetZipFile } from '../utils/assetZip'
+import { toAssetZipFile, preloadExrConverter } from '../utils/assetZip'
 import { validateAssetPackage } from '../utils/validateAssetPackage'
+import { ChunkErrorBoundary } from '../components/RouteBoundary'
 
 // 상세페이지와 동일하게 lazy 로딩 — three.js 뷰어를 메인 번들에서 분리(코드 스플리팅 유지).
 const AssetViewer360 = lazy(() => import('../features/viewer/AssetViewer360'))
@@ -47,6 +48,7 @@ async function buildPreviewData(file) {
     let modelUrl = null
     let modelExt = null
     const textureUrls = []
+    if (Object.keys(entries).some(p => extOf(p) === 'exr')) preloadExrConverter()
 
     for (const [path, data] of Object.entries(entries)) {
       // __MACOSX, 디렉토리 엔트리 등은 건너뛴다.
@@ -416,18 +418,26 @@ export default function CreateAssetPage() {
                 style={{ height: 340 }}
               >
                 {previewStatus === 'ready' && previewData ? (
-                  <Suspense fallback={(
-                    <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
-                      뷰어 불러오는 중...
+                  // 뷰어 청크 로드 실패(배포 직후 등)가 라우트 경계까지 올라가 자동 새로고침되면
+                  // 작성 중인 폼이 날아간다 → 여기서 막고 미리보기만 포기한다(등록은 썸네일 직접 업로드로 가능).
+                  <ChunkErrorBoundary fallback={(
+                    <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm px-4 text-center">
+                      미리보기를 불러오지 못했어요. 썸네일을 직접 올리면 등록할 수 있어요.
                     </div>
                   )}>
-                    <AssetViewer360
-                      modelUrl={previewData.modelUrl}
-                      fileExtension={previewData.ext}
-                      textureUrls={previewData.textureUrls}
-                      onCaptureReady={fn => { captureRef.current = fn }}
-                    />
-                  </Suspense>
+                    <Suspense fallback={(
+                      <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
+                        뷰어 불러오는 중...
+                      </div>
+                    )}>
+                      <AssetViewer360
+                        modelUrl={previewData.modelUrl}
+                        fileExtension={previewData.ext}
+                        textureUrls={previewData.textureUrls}
+                        onCaptureReady={fn => { captureRef.current = fn }}
+                      />
+                    </Suspense>
+                  </ChunkErrorBoundary>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-sm gap-1">
                     <span className="text-3xl">📦</span>

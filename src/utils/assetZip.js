@@ -1,6 +1,18 @@
 import { unzipSync, zipSync } from 'fflate'
-import { exrToPngBytes } from './exrToPng'
 import { CONVERTIBLE_TEXTURE_EXTS, extOf, isJunkEntry, isKeptForUpload } from './assetFormats'
+
+// exrToPng 는 three.js 코어 + EXRLoader(약 750KB)를 끌고 온다. 정적 import 하면
+// App → CreateAssetPage → assetZip 체인으로 three 전체가 메인 번들에 들어가므로,
+// ZIP 안에 실제로 .exr 이 있을 때만 동적 import 한다(모듈 Promise 는 한 번만 만든다).
+// 청크 로드 실패(배포 직후 옛 해시 404 등)는 캐시하지 않아 다음 업로드에서 재시도한다.
+let exrModule = null
+const loadExrToPng = () => (exrModule ??= import('./exrToPng').catch((e) => { exrModule = null; throw e }))
+
+// ZIP 에 .exr 이 보이는 시점(파일 선택 직후)에 변환 모듈을 미리 받아 둔다.
+// 폼을 쓰는 동안 배포가 끼어들어도 이미 받은 모듈로 변환할 수 있다(제출 시점엔 옛 해시 청크가 404).
+export function preloadExrConverter() {
+  loadExrToPng().catch(() => { /* 실패는 제출 시 다시 시도하고, 그때 사용자에게 알린다 */ })
+}
 
 const MODEL_EXTENSIONS = new Set(['fbx', 'glb'])
 
@@ -17,6 +29,15 @@ async function normalizeZip(file, bytes) {
     if (isJunkEntry(path)) continue
 
     if (CONVERTIBLE_TEXTURE_EXTS.has(extOf(path))) {
+      let exrToPngBytes
+      try {
+        ({ exrToPngBytes } = await loadExrToPng())
+      } catch (e) {
+        // 변환 모듈(청크)을 못 받았다 — 배포 직후 옛 해시 404 가 대표적. 여기서 원본 .exr 을 남기면
+        // 백엔드가 허용하지 않는 확장자라 업로드 전체가 거부되고 이유도 안 보이므로, 멈추고 알린다.
+        console.warn('[assetZip] EXR 변환 모듈 로드 실패:', e)
+        throw new Error('EXR 텍스처 변환 기능을 불러오지 못했어요. 새 버전이 배포됐을 수 있으니 새로고침 후 다시 등록해 주세요.', { cause: e })
+      }
       try {
         const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
         clean[path.replace(/\.[^.]+$/i, '.png')] = await exrToPngBytes(buf)
