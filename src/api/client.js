@@ -70,16 +70,29 @@ function redirectedToLogin(res) {
   try { return new URL(res.url).pathname.startsWith('/login') } catch { return false }
 }
 
+// 토큰이 형식상 정상이고 만료 시각 전인가(서버 검증 아님 — 로그아웃 여부 판단용).
+function isLiveToken(token) {
+  const exp = decodeJwt(token)?.exp
+  return typeof exp === 'number' && exp * 1000 > Date.now()
+}
+
 // request/requestMultipart 공통 응답 처리. { retry: true } 면 호출부가 새 토큰으로 1회 재시도한다.
-async function handleResponse(res, { skipAuth, okOnNonJson, hadToken, retried, idempotent }) {
+async function handleResponse(res, { skipAuth, okOnNonJson, token, retried, idempotent }) {
   if (redirectedToLogin(res)) {
-    if (skipAuth || !hadToken) throw new Error(skipAuth ? SERVER_UNHANDLED : '로그인이 필요해요.')
+    if (skipAuth || !token) throw new Error(skipAuth ? SERVER_UNHANDLED : '로그인이 필요해요.')
     if (!retried) {
-      // 로컬 exp 판단과 달리 서버가 토큰을 거부했을 수 있다 → 갱신해 본다. 갱신마저 실패하면 진짜 세션 만료.
-      if (!(await tryRefresh())) { redirectToLogin(); throw new Error(SESSION_EXPIRED) }
-      // 쓰기 요청은 서버 오류로 일부 처리됐을 수 있어 자동 재전송하지 않는다.
-      if (idempotent) return { retry: true }
-      throw new Error('요청을 처리하지 못했어요. 다시 시도해 주세요.')
+      // 로컬 exp 판단과 달리 서버가 토큰을 거부했을 수 있다 → 갱신해 본다.
+      if (await tryRefresh()) {
+        // 쓰기 요청은 서버 오류로 일부 처리됐을 수 있어 자동 재전송하지 않는다.
+        if (idempotent) return { retry: true }
+        throw new Error('요청을 처리하지 못했어요. 다시 시도해 주세요.')
+      }
+      // 갱신도 실패. 하지만 운영에선 DB 일시 장애 때도 원 요청·갱신 요청이 둘 다 302 가 되므로,
+      // 토큰이 만료 전이면 세션 문제로 단정하지 않는다 — 서버가 한 번 흔들릴 때 전원이 로그아웃되고
+      // 작성 중인 폼이 날아가는 것을 막는다. 진짜 무효라면 만료 시각에 ensureToken 이 로그인으로 보낸다.
+      if (isLiveToken(token)) throw new Error(SERVER_UNHANDLED)
+      redirectToLogin()
+      throw new Error(SESSION_EXPIRED)
     }
     // 새 토큰으로도 같으면 인증이 아니라 서버가 처리하지 못한 오류 — 로그아웃시키지 않는다.
     throw new Error(SERVER_UNHANDLED)
@@ -133,7 +146,7 @@ export async function request(path, options = {}) {
         ...fetchOptions.headers,
       },
     })
-    const out = await handleResponse(res, { skipAuth, okOnNonJson, hadToken: !!token, retried: attempt > 0, idempotent })
+    const out = await handleResponse(res, { skipAuth, okOnNonJson, token, retried: attempt > 0, idempotent })
     if (!out.retry) return out.data
   }
 }
@@ -150,7 +163,7 @@ export async function requestMultipart(path, formData, { method = 'POST' } = {})
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,
     })
-    const out = await handleResponse(res, { hadToken: !!token, retried: attempt > 0, idempotent: false })
+    const out = await handleResponse(res, { token, retried: attempt > 0, idempotent: false })
     if (!out.retry) return out.data
   }
 }

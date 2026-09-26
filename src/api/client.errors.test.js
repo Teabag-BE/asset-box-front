@@ -6,7 +6,10 @@ import { request, requestMultipart } from './client'
 //  - 403 + ApiResponse 오류 본문 → 업무상 거부: 서버 메시지만, 세션 유지
 //  - 302→/login 추종(운영 백엔드 Asset-Box#196) → refresh 1회, GET만 자동 재시도, 쓰기는 재전송 안 함
 const store = new Map()
-const TOKEN = 'x.eyJzdWIiOiIxIn0.y' // exp 없음 → 로컬 기준 만료 아님
+const TOKEN = 'x.eyJzdWIiOiIxIn0.y' // exp 없음 → 로컬 기준 만료 아님(ensureToken 통과), 단 '살아 있는 토큰'으로도 안 봄
+const b64url = (o) => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+// 만료 1시간 전의 정상 JWT 모양 토큰
+const LIVE = `h.${b64url({ email: 'ta@assetbox.cloud', exp: Math.floor(Date.now() / 1000) + 3600 })}.s`
 
 beforeEach(() => {
   store.clear()
@@ -81,7 +84,14 @@ describe('302 → /login 추종(HTML 200) 감지', () => {
     expect(store.has('accessToken')).toBe(true)
     expect(location.assign).not.toHaveBeenCalled()
   })
-  it('refresh 실패면 진짜 세션 만료 → 로그인으로', async () => {
+  it('refresh 도 실패 + 토큰이 만료 전이면 서버 장애로 보고 로그아웃시키지 않는다(DB 장애 때 전원 로그아웃 방지)', async () => {
+    store.set('accessToken', LIVE)
+    mockFetch([toLogin()], toLogin())   // 원 요청·갱신 요청 둘 다 302 — 운영 DB 장애 모양
+    await expect(request('/posts')).rejects.toThrow('서버가 요청을 처리하지 못했어요')
+    expect(store.get('accessToken')).toBe(LIVE)
+    expect(location.assign).not.toHaveBeenCalled()
+  })
+  it('refresh 실패 + 만료 정보가 없는(깨진) 토큰이면 세션 만료 → 로그인으로', async () => {
     store.set('accessToken', TOKEN)
     mockFetch([toLogin()])
     await expect(request('/posts')).rejects.toThrow('세션이 만료')
