@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { ToastProvider } from './components/Toast'
 import { ConfirmProvider } from './components/ConfirmDialog'
@@ -66,11 +66,27 @@ export default function App() {
             {/* 프로필 / 포트폴리오 */}
             <Route path="/profile"            element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
             <Route path="/portfolio/:userId"  element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
+
+            {/* 알 수 없는 경로 — 없으면 헤더도 없는 빈 화면이 된다 */}
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
         </ConfirmProvider>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
+  )
+}
+
+function NotFound() {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 text-center px-4">
+      <span className="text-5xl mb-4">🧭</span>
+      <p className="text-slate-700 font-semibold text-lg mb-1">페이지를 찾을 수 없어요</p>
+      <p className="text-slate-400 text-sm mb-5">주소가 바뀌었거나 삭제된 페이지일 수 있어요.</p>
+      <Link to="/" className="rounded-lg bg-[#869B7E] text-white text-sm px-4 py-2 hover:bg-[#6b7d64] transition-colors">
+        홈으로
+      </Link>
+    </div>
   )
 }

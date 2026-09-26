@@ -52,6 +52,7 @@ export default function AssetDetailPage() {
   const [downloadingId, setDownloadingId] = useState(null)
   const [authorName, setAuthorName] = useState('')
   const [liked, setLiked] = useState(false)   // 현재 사용자의 좋아요 여부(백엔드 liked)
+  const [liking, setLiking] = useState(false)
 
   // 백엔드 post DTO가 작성자 닉네임을 안 주므로 authorId로 이름을 해석 (캐시됨)
   useEffect(() => {
@@ -85,13 +86,18 @@ export default function AssetDetailPage() {
 
   // 좋아요 토글 — 백엔드가 권위값(likeCount/liked)을 돌려주므로 그걸로 상태를 맞춘다.
   async function handleLike() {
-    if (!user) return
+    // 진행 중 가드: 연타하면 동시 토글이 서버 unique 제약에 걸린다.
+    if (!user || liking) return
+    setLiking(true)
     try {
       const res = await postApi.toggleLike(id)
       setLiked(!!res.liked)
       setPost(p => (p ? { ...p, likeCount: res.likeCount } : p))
     } catch (e) {
-      setError(e.message)
+      // setError 를 쓰면 상세 페이지 전체가 오류 문구로 교체돼 작성 중인 댓글까지 사라진다 → 토스트로만.
+      toast(e.message ?? '좋아요를 반영하지 못했어요', 'error')
+    } finally {
+      setLiking(false)
     }
   }
 
@@ -184,7 +190,7 @@ export default function AssetDetailPage() {
             {/* ❤️ 좋아요 — 로그인 사용자만. 백엔드 POST /posts/{id}/like 로 토글. */}
             {user && (
               <div className="mt-5 pt-5 border-t border-linen-200">
-                <Button variant={liked ? 'primary' : 'secondary'} onClick={handleLike}>
+                <Button variant={liked ? 'primary' : 'secondary'} onClick={handleLike} disabled={liking}>
                   {liked ? '♥' : '♡'} 좋아요 {post.likeCount ?? 0}
                 </Button>
               </div>

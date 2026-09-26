@@ -44,6 +44,8 @@ function CommentInput({ onSubmit, placeholder = '댓글을 입력하세요...', 
     try {
       await onSubmit(text)
       setText('')
+    } catch {
+      // 실패 안내는 onSubmit 쪽이 했다 — 입력은 지우지 않고 남겨 그대로 다시 보낼 수 있게 한다.
     } finally {
       setLoading(false)
     }
@@ -120,6 +122,7 @@ function CommentItem({ comment, targetId, currentUserId, api, onRefresh, onError
       onRefresh()
     } catch (err) {
       onError(err.message ?? '등록에 실패했습니다.')
+      throw err  // CommentInput 이 입력을 지우지 않도록 실패를 알린다
     }
   }
 
@@ -200,6 +203,7 @@ export default function CommentSection({ targetId, type = 'post' }) {
       await load()
     } catch (err) {
       setError(err.message ?? '등록에 실패했습니다.')
+      throw err  // CommentInput 이 입력을 지우지 않도록 실패를 알린다
     }
   }
 
