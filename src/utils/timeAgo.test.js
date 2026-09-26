@@ -48,17 +48,22 @@ describe('timeAgo — #104 TZ 없는 서버 시각(UTC LocalDateTime)', () => {
   })
 })
 
+// 오전/오후 라벨은 런타임 ICU 데이터에 따라 '오후' 또는 'PM'으로 나온다(CI Node 22는 'PM', 로컬 Node 20·25는 '오후').
+// 지키려는 것은 라벨이 아니라 "9시간 어긋나지 않은 시·분"이므로 라벨은 둘 다 허용하고 시각은 정확히 고정한다.
+const PM = '(?:오후|PM)'
+const AM = '(?:오전|AM)'
+
 describe('formatTime — DM 말풍선 시각(GMT 로 보이던 회귀)', () => {
   it('UTC 06:24 → KST 오후 03:24', () => {
-    expect(norm(formatTime('2026-07-16T06:24:00'))).toBe('오후 03:24')
+    expect(norm(formatTime('2026-07-16T06:24:00'))).toMatch(new RegExp(`^${PM} 03:24$`))
   })
 })
 
 describe('formatDateTime — 요청 상세 절대 시각', () => {
   it('UTC 06:24 → 2026년 7월 16일 오후 03:24', () => {
-    expect(norm(formatDateTime('2026-07-16T06:24:00'))).toBe('2026년 7월 16일 오후 03:24')
+    expect(norm(formatDateTime('2026-07-16T06:24:00'))).toMatch(new RegExp(`^2026년 7월 16일 ${PM} 03:24$`))
   })
   it('UTC 자정 직전 → KST 다음 날로 넘어간다', () => {
-    expect(norm(formatDateTime('2026-07-15T16:30:00'))).toMatch(/^2026년 7월 16일 오전 01:30$/)
+    expect(norm(formatDateTime('2026-07-15T16:30:00'))).toMatch(new RegExp(`^2026년 7월 16일 ${AM} 01:30$`))
   })
 })
