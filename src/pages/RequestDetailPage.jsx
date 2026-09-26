@@ -51,6 +51,7 @@ export default function RequestDetailPage() {
   const [req, setReq] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [accepting, setAccepting] = useState(false)
 
   useEffect(() => {
     requestApi.getDetail(id)
@@ -67,8 +68,24 @@ export default function RequestDetailPage() {
   }
 
   async function handleAccept() {
-    try { const updated = await requestApi.assign(id); setReq(updated); toast('요청을 수락했어요 — 제작중으로 전환됐어요') }
-    catch (e) { toast(e.message ?? '수락에 실패했어요', 'error') }
+    if (accepting) return
+    const ok = await confirm({ title: '요청 수락', message: '이 요청을 맡아 제작할까요?\n수락하면 요청자에게 담당자로 표시되고 되돌릴 수 없어요.', confirmText: '수락' })
+    if (!ok) return
+    setAccepting(true)
+    try {
+      const updated = await requestApi.assign(id)
+      // 수락 응답에는 참조 이미지가 비어 올 수 있어, 기존 값을 유지하며 상태 필드만 갱신한다.
+      setReq(prev => ({
+        ...prev,
+        ...updated,
+        referenceImages: updated?.referenceImages?.length ? updated.referenceImages : prev?.referenceImages,
+      }))
+      toast('요청을 수락했어요 — 제작중으로 전환됐어요')
+    } catch (e) {
+      toast(e.message ?? '수락에 실패했어요', 'error')
+    } finally {
+      setAccepting(false)
+    }
   }
 
   if (loading) return <div className="flex justify-center py-20"><Spinner className="w-7 h-7" /></div>
@@ -76,7 +93,9 @@ export default function RequestDetailPage() {
   if (!req) return null
 
   const isMine = user && String(user.id) === String(req.requesterId)
-  const canAccept = user && !isMine && !req.assigneeId && req.status === 'REQUESTED'
+  // 수락은 TA 전공만 가능(백엔드 REQUEST_ASSIGN_FORBIDDEN). 다른 전공에겐 버튼 대신 안내를 보인다.
+  const acceptable = user && !isMine && !req.assigneeId && req.status === 'REQUESTED'
+  const canAccept = acceptable && user.major === 'TA'
   // 담당 제작자가 제작중이고 아직 완성물이 연결되지 않았으면 완성물(에셋) 등록 진입점을 준다.
   // 에셋 작성 시 linkedRequestId 로 연결되면 백엔드가 요청을 자동 완료 처리한다.
   const canComplete = user && String(user.id) === String(req.assigneeId) && req.status === 'IN_PROGRESS' && !req.linkedPostId
@@ -132,7 +151,10 @@ export default function RequestDetailPage() {
             <div className="mb-4"><StatusBadge status={req.status} /></div>
             <StatusTimeline status={req.status} />
             {canAccept && (
-              <Button size="sm" className="w-full justify-center mt-4" onClick={handleAccept}>이 요청 수락하기</Button>
+              <Button size="sm" className="w-full justify-center mt-4" onClick={handleAccept} loading={accepting}>이 요청 수락하기</Button>
+            )}
+            {acceptable && !canAccept && (
+              <p className="mt-4 text-xs text-slate-400">요청 수락은 TA 전공 회원만 할 수 있어요.</p>
             )}
             {canComplete && (
               <>

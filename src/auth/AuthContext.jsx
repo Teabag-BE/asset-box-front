@@ -21,6 +21,19 @@ export function AuthProvider({ children }) {
     return () => { active = false }
   }, [])
 
+  // 다른 탭에서 로그아웃하거나 다른 계정으로 로그인하면 이 탭도 따라간다.
+  // (안 그러면 이 탭은 이전 사용자 화면인데 요청은 새 토큰으로 나가 남의 프로필을 덮어쓸 수 있다)
+  // storage 이벤트는 값을 바꾼 탭이 아닌 다른 탭에서만 발생한다.
+  useEffect(() => {
+    function onStorage(e) {
+      if (e.key !== 'accessToken') return
+      if (!e.newValue) { setUser(null); return }
+      userApi.me().then(setUser).catch(() => {})
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   async function login({ email, password }) {
     // 옛/무효 토큰이 Authorization으로 끼면 백엔드가 302/403 → 로그인 전 제거
     localStorage.removeItem('accessToken')
