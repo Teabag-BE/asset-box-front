@@ -111,6 +111,7 @@ export default function CreateAssetPage() {
   const [presetCategory, setPresetCategory] = useState(null)  // CategorySelector 로 밀어넣을 categoryId
   const previewUrlsRef = useRef([])   // revoke 대상 blob URL 목록
   const captureRef = useRef(null)     // AssetViewer360 가 등록한 capture() 함수
+  const submittingRef = useRef(false)  // 제출 진행 중(동기 가드 — 더블클릭 중복 등록 방지)
 
   // assetPackage 가 바뀌면 미리보기 데이터를 다시 준비한다.
   // 로직은 async 함수로 두고, setState 는 콜백/후속 처리에서만 호출(effect 동기 setState 아님).
@@ -259,6 +260,20 @@ export default function CreateAssetPage() {
 
   async function onSubmit(e) {
     e.preventDefault()
+    // 썸네일 캡처·패키지 검사를 await 하는 동안에도 버튼이 살아 있어, 더블클릭하면 게시글이 두 번 생성됐다.
+    // state 는 비동기로 반영되므로 ref 로 즉시 막는다.
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setLoading(true)
+    try {
+      await submitAsset()
+    } finally {
+      submittingRef.current = false
+      setLoading(false)
+    }
+  }
+
+  async function submitAsset() {
     setError('')
     if (!categoryId) { setError('대분류를 선택해주세요. (중·소분류는 선택 사항이에요)'); return }
     if (!assetPackage) { setError('GLB, FBX 또는 ZIP 파일은 필수입니다.'); return }
@@ -279,7 +294,6 @@ export default function CreateAssetPage() {
     if (!check.ok) { setError(check.message); return }
     if (check.warning && !window.confirm(`${check.warning}\n\n그대로 등록할까요?`)) return
 
-    setLoading(true)
     try {
       const assetZip = await toAssetZipFile(assetPackage)
       const created = await postApi.create({
@@ -295,8 +309,6 @@ export default function CreateAssetPage() {
       navigate(created?.id ? `/assets/${created.id}` : '/assets')
     } catch (err) {
       setError(err.message)
-    } finally {
-      setLoading(false)
     }
   }
 

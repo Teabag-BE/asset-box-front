@@ -2,14 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useToast } from '../components/Toast'
-
-const MAJORS = [
-  { value: 'TA', label: '3D 아티스트' },
-  { value: 'UNITY', label: 'Unity 크리에이터' },
-  { value: 'UNREAL', label: 'Unreal 크리에이터' },
-  { value: 'BACK_END', label: '개발자' },
-  { value: 'AI', label: 'AI 크리에이터' },
-]
+import { MAJORS } from '../utils/majors'
 
 export default function SignupPage() {
   const { signup } = useAuth()

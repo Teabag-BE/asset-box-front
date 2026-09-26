@@ -116,8 +116,13 @@ export default function AssetCard({
 
         {/* 통계 — mt-auto 로 항상 카드 맨 아래 */}
         <div className="mt-auto flex items-center gap-3.5 border-t border-linen-200 pt-2.5 text-xs text-slate-400 tabular-nums">
-          <span className="flex items-center gap-1 text-crimson-400"><HeartIcon filled={(likeCount ?? 0) > 0} /><span className="text-slate-500">{likeCount ?? 0}</span></span>
-          <span className="flex items-center gap-1"><EyeIcon /><span className="text-slate-500">{viewCount ?? 0}</span></span>
+          {/* 운영 목록 API엔 아직 좋아요·조회수가 없다(Asset-Box#169 대기) — 값이 없으면 ♡0 👁0 대신 생략 */}
+          {typeof likeCount === 'number' && (
+            <span className="flex items-center gap-1 text-crimson-400"><HeartIcon filled={likeCount > 0} /><span className="text-slate-500">{likeCount}</span></span>
+          )}
+          {typeof viewCount === 'number' && (
+            <span className="flex items-center gap-1"><EyeIcon /><span className="text-slate-500">{viewCount}</span></span>
+          )}
           {downloadCount > 0 && <span className="flex items-center gap-1"><span>⬇</span> {downloadCount}</span>}
           {commentCount > 0 && <span className="flex items-center gap-1"><span>💬</span> {commentCount}</span>}
         </div>

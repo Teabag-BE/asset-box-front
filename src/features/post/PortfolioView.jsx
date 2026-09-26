@@ -4,6 +4,7 @@ import { postApi } from '../../api/postApi'
 import AssetGrid from './AssetGrid'
 import Avatar from '../../components/Avatar'
 import Button from '../../components/Button'
+import { MAJORS, majorLabel } from '../../utils/majors'
 
 // 유저 프로필 + 그 유저가 올린 에셋 (백엔드 authorId 필터 없어 클라이언트에서 필터)
 export default function PortfolioView({ profile, isMe, onAvatarChange, onSaveProfile }) {
@@ -29,7 +30,8 @@ export default function PortfolioView({ profile, isMe, onAvatarChange, onSavePro
     e.preventDefault()
     setSaving(true)
     try {
-      await onSaveProfile?.(form)
+      // 전공 미선택('')을 보내면 백엔드 Major.valueOf('')가 500 → null 이면 기존 값 유지.
+      await onSaveProfile?.({ ...form, major: form.major || null })
       setEditing(false)
     } finally {
       setSaving(false)
@@ -70,9 +72,12 @@ export default function PortfolioView({ profile, isMe, onAvatarChange, onSavePro
                   required minLength={2} maxLength={30} placeholder="닉네임"
                   className="border border-slate-300 rounded-lg px-3 py-1.5 text-lg font-bold focus:outline-none focus:border-[#869B7E]" />
                 <div className="grid grid-cols-2 gap-2">
-                  <input value={form.major} onChange={e => setForm(p => ({ ...p, major: e.target.value }))}
-                    maxLength={50} placeholder="전공/직군 (예: BACK_END)"
-                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#869B7E]" />
+                  <select value={form.major} onChange={e => setForm(p => ({ ...p, major: e.target.value }))}
+                    aria-label="전공/직군"
+                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-[#869B7E]">
+                    {!MAJORS.some(m => m.value === form.major) && <option value="">전공 선택</option>}
+                    {MAJORS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
                   <input type="email" value={form.publicEmail} onChange={e => setForm(p => ({ ...p, publicEmail: e.target.value }))}
                     maxLength={50} placeholder="공개 이메일 (선택)"
                     className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#869B7E]" />
@@ -89,7 +94,7 @@ export default function PortfolioView({ profile, isMe, onAvatarChange, onSavePro
               <>
                 <h1 className="text-2xl font-bold text-slate-900">{profile.nickname}</h1>
                 <p className="text-sm text-slate-400">{profile.publicEmail || profile.email}</p>
-                {profile.major && <p className="text-xs text-slate-400 mt-0.5">{profile.major}</p>}
+                {profile.major && <p className="text-xs text-slate-400 mt-0.5">{majorLabel(profile.major)}</p>}
                 <p className="text-sm text-slate-600 mt-2">{profile.description || '소개가 없습니다.'}</p>
 
                 <div className="flex gap-6 mt-4">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { postApi } from '../api/postApi'
 import { useAuth } from '../auth/AuthContext'
@@ -21,6 +21,9 @@ export default function EditAssetPage() {
   const [tags, setTags] = useState([])
   const [thumbFile, setThumbFile] = useState(null)   // 새 썸네일(선택 — 비우면 기존 유지)
   const [zipFile, setZipFile] = useState(null)       // 새 모델 파일(선택 — 비우면 기존 유지)
+  // '취소'는 state 만이 아니라 네이티브 input 값도 비워야 화면 표시와 실제가 맞고, 같은 파일을 다시 고를 수 있다.
+  const thumbInputRef = useRef(null)
+  const zipInputRef = useRef(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -105,17 +108,17 @@ export default function EditAssetPage() {
         <div className="grid sm:grid-cols-2 gap-4">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-600">썸네일 교체 <span className="text-slate-400">(선택)</span></span>
-            <input type="file" accept="image/*"
+            <input ref={thumbInputRef} type="file" accept="image/*"
               onChange={e => setThumbFile(e.target.files?.[0] ?? null)}
               className="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-[#869B7E]/15 file:text-[#556350] file:font-semibold file:cursor-pointer" />
-            {thumbFile && <span className="text-xs text-slate-400">{thumbFile.name} <button type="button" className="underline" onClick={() => setThumbFile(null)}>취소</button></span>}
+            {thumbFile && <span className="text-xs text-slate-400">{thumbFile.name} <button type="button" className="underline" onClick={() => { setThumbFile(null); if (thumbInputRef.current) thumbInputRef.current.value = '' }}>취소</button></span>}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-slate-600">모델 파일 교체 <span className="text-slate-400">(선택)</span></span>
-            <input type="file" accept=".glb,.fbx,.zip,model/gltf-binary,application/zip,application/x-zip-compressed"
+            <input ref={zipInputRef} type="file" accept=".glb,.fbx,.zip,model/gltf-binary,application/zip,application/x-zip-compressed"
               onChange={e => setZipFile(e.target.files?.[0] ?? null)}
               className="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-[#869B7E]/15 file:text-[#556350] file:font-semibold file:cursor-pointer" />
-            {zipFile && <span className="text-xs text-slate-400">{zipFile.name} <button type="button" className="underline" onClick={() => setZipFile(null)}>취소</button></span>}
+            {zipFile && <span className="text-xs text-slate-400">{zipFile.name} <button type="button" className="underline" onClick={() => { setZipFile(null); if (zipInputRef.current) zipInputRef.current.value = '' }}>취소</button></span>}
           </label>
         </div>
         <p className="text-xs text-slate-400">※ 파일을 비워두면 기존 썸네일·모델이 그대로 유지됩니다.</p>
